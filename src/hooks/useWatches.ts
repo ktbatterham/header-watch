@@ -1,0 +1,90 @@
+import { useState, useEffect, useCallback } from 'react';
+import {
+  loadWatches,
+  addWatch,
+  updateWatch,
+  removeWatch,
+} from '../storage/watches';
+import { removeSnapshotsForWatch } from '../storage/snapshots';
+import { removeEventsForWatch } from '../storage/events';
+import type { WatchTarget } from '../types';
+
+function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+  } catch {
+    return url;
+  }
+}
+
+export function useWatches() {
+  const [watches, setWatches] = useState<WatchTarget[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    const data = await loadWatches();
+    setWatches(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const add = useCallback(
+    async (url: string, baselineSnapshotId: string): Promise<WatchTarget> => {
+      const normalized = url.startsWith('http') ? url : `https://${url}`;
+      const watch: WatchTarget = {
+        id: makeId(),
+        url: normalized,
+        host: hostFromUrl(normalized),
+        addedAt: new Date().toISOString(),
+        lastCheckedAt: null,
+        lastGrade: null,
+        lastScore: null,
+        baselineSnapshotId,
+        hasAlert: false,
+        checkIntervalHours: 24,
+      };
+      await addWatch(watch);
+      await refresh();
+      return watch;
+    },
+    [refresh],
+  );
+
+  const update = useCallback(
+    async (watch: WatchTarget) => {
+      await updateWatch(watch);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const remove = useCallback(
+    async (id: string) => {
+      await removeWatch(id);
+      await removeSnapshotsForWatch(id);
+      await removeEventsForWatch(id);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const clearAlert = useCallback(
+    async (id: string) => {
+      const w = watches.find((x) => x.id === id);
+      if (w && w.hasAlert) {
+        await updateWatch({ ...w, hasAlert: false });
+        await refresh();
+      }
+    },
+    [watches, refresh],
+  );
+
+  return { watches, loading, refresh, add, update, remove, clearAlert };
+}
