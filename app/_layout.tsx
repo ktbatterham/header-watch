@@ -1,12 +1,24 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { configureNotificationHandler } from '../src/notifications';
+import { configureNotificationHandler, requestNotificationPermissions } from '../src/notifications';
+import { registerBackgroundFetch } from '../src/tasks/background';
 import { colors } from '../src/theme';
+
+// Background task must be imported here so it's defined before any render.
+import '../src/tasks/background';
 
 export default function RootLayout() {
   useEffect(() => {
     configureNotificationHandler();
+
+    // Ask for notification permission then register background task.
+    // Both are best-effort — the app works fine without them.
+    requestNotificationPermissions().then((granted) => {
+      if (granted) {
+        registerBackgroundFetch().catch(() => {});
+      }
+    });
   }, []);
 
   return (

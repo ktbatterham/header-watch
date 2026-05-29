@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,16 +13,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import { useWatches } from '../../src/hooks/useWatches';
-import { useChecker } from '../../src/hooks/useChecker';
 import { WatchRow } from '../../src/components/WatchRow';
-import { scheduleDriftNotification } from '../../src/notifications';
+import { getBackgroundFetchStatus } from '../../src/tasks/background';
 
 export default function WatchesScreen() {
   const router = useRouter();
   const { watches, loading, refresh, remove } = useWatches();
-  const { checkTarget } = useChecker();
-  const [checkingId, setCheckingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [bgStatus, setBgStatus] = useState<{ available: boolean; registered: boolean } | null>(null);
+
+  useEffect(() => {
+    getBackgroundFetchStatus().then(setBgStatus).catch(() => {});
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -34,38 +36,6 @@ export default function WatchesScreen() {
     setRefreshing(true);
     await refresh();
     setRefreshing(false);
-  };
-
-  const handleCheckNow = async (watchId: string) => {
-    const watch = watches.find((w) => w.id === watchId);
-    if (!watch) return;
-    setCheckingId(watchId);
-    try {
-      const { driftEvent } = await checkTarget(watch);
-      if (driftEvent) {
-        await scheduleDriftNotification(driftEvent);
-      }
-      await refresh();
-    } catch (e: any) {
-      Alert.alert('Check failed', e.message ?? 'Could not reach the server.');
-    } finally {
-      setCheckingId(null);
-    }
-  };
-
-  const handleDelete = (watchId: string, host: string) => {
-    Alert.alert(
-      'Remove watch',
-      `Stop watching ${host}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => remove(watchId),
-        },
-      ],
-    );
   };
 
   return (
@@ -129,6 +99,23 @@ export default function WatchesScreen() {
           ))
         )}
       </ScrollView>
+
+      {bgStatus && watches.length > 0 && (
+        <View style={styles.bgStatus}>
+          <Ionicons
+            name={bgStatus.registered ? 'radio-outline' : 'radio-button-off-outline'}
+            size={12}
+            color={bgStatus.registered ? colors.good : colors.textMuted}
+          />
+          <Text style={[styles.bgStatusText, bgStatus.registered && styles.bgStatusActive]}>
+            {bgStatus.registered
+              ? 'Background checks active'
+              : bgStatus.available
+              ? 'Background checks pending'
+              : 'Background checks unavailable'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -166,6 +153,22 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  bgStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  bgStatusText: {
+    color: colors.textMuted,
+    fontSize: typography.xs,
+  },
+  bgStatusActive: {
+    color: colors.good,
   },
   emptyContainer: {
     flexGrow: 1,

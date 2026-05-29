@@ -19,6 +19,7 @@ import { getEventsForWatch } from '../../src/storage/events';
 import { useChecker } from '../../src/hooks/useChecker';
 import { useWatches } from '../../src/hooks/useWatches';
 import { scheduleDriftNotification } from '../../src/notifications';
+import { updateWatch } from '../../src/storage/watches';
 import { SectionCard } from '../../src/components/SectionCard';
 import { GradeBadge } from '../../src/components/GradeBadge';
 import { HeaderDiff } from '../../src/components/HeaderDiff';
@@ -227,6 +228,43 @@ export default function WatchDetailScreen() {
         </View>
       )}
 
+      {/* Check interval */}
+      <View>
+        <Text style={styles.sectionLabel}>Check interval</Text>
+        <SectionCard>
+          <View style={styles.intervalRow}>
+            {([1, 6, 24] as const).map((hrs) => (
+              <TouchableOpacity
+                key={hrs}
+                style={[
+                  styles.intervalBtn,
+                  watch.checkIntervalHours === hrs && styles.intervalBtnActive,
+                ]}
+                onPress={async () => {
+                  const updated = { ...watch, checkIntervalHours: hrs };
+                  await updateWatch(updated);
+                  setWatch(updated);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.intervalBtnText,
+                    watch.checkIntervalHours === hrs && styles.intervalBtnTextActive,
+                  ]}
+                >
+                  {hrs === 1 ? '1h' : hrs === 6 ? '6h' : '24h'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.intervalNote}>
+            Background checks run automatically at this cadence. iOS controls
+            the exact timing based on battery and usage patterns.
+          </Text>
+        </SectionCard>
+      </View>
+
       {/* Danger zone */}
       <TouchableOpacity
         style={styles.deleteBtn}
@@ -361,6 +399,36 @@ const styles = StyleSheet.create({
   diffLegendArrow: {
     color: colors.textMuted,
     fontSize: typography.xs,
+  },
+  intervalRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  intervalBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  intervalBtnActive: {
+    backgroundColor: colors.accentBg,
+    borderColor: colors.accent,
+  },
+  intervalBtnText: {
+    color: colors.textSecondary,
+    fontSize: typography.sm,
+    fontWeight: '600',
+  },
+  intervalBtnTextActive: {
+    color: colors.accentLight,
+  },
+  intervalNote: {
+    color: colors.textMuted,
+    fontSize: typography.xs,
+    lineHeight: 17,
   },
   deleteBtn: {
     flexDirection: 'row',
