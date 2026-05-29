@@ -7,11 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "headerwatch",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#070b14"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ktbatterham.headerwatch",
@@ -39,6 +34,14 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#070b14",
+          "image": "./assets/splash.png",
+          "resizeMode": "contain"
+        }
+      ],
       [
         "expo-notifications",
         {

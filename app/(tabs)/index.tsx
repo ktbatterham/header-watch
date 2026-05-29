@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import { useWatches } from '../../src/hooks/useWatches';
 import { WatchRow } from '../../src/components/WatchRow';
