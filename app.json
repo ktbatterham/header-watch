@@ -17,7 +17,10 @@
       "bundleIdentifier": "com.ktbatterham.headerwatch",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["fetch", "remote-notification"]
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -47,6 +50,12 @@
     "experiments": {
       "typedRoutes": true
     },
-    "owner": "ktbatterham"
+    "owner": "ktbatterham",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "865630b8-ace6-4e4f-bf0e-eeee16be554e"
+      }
+    }
   }
 }
