@@ -1,8 +1,46 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import type { ScanResult } from '../types';
 
 const BASE_URL = 'https://securl-app-production.up.railway.app';
 const POLL_INTERVAL_MS = 1_500;
 const POLL_MAX_ATTEMPTS = 80; // ~2 min
+const OWNER_TOKEN_KEY = 'header-watch:scan-owner-token';
+
+// ── Scan-owner token ──────────────────────────────────────────────────────────
+// The SecURL backend scopes every scan to a per-client "owner" token and rejects
+// scan requests without one (HTTP 401). This is NOT an auth secret — it is a
+// stable random identifier generated once per install and persisted, so this
+// device can read back the scans it created. Must be 24–256 chars with decent
+// entropy (the server requires >= 8 distinct characters).
+
+let cachedOwnerToken: string | null = null;
+
+function generateOwnerToken(): string {
+  const segments = Array.from({ length: 4 }, () => Math.random().toString(36).slice(2));
+  return `hw-${Date.now().toString(36)}-${segments.join('')}`.slice(0, 120);
+}
+
+async function getOwnerToken(): Promise<string> {
+  if (cachedOwnerToken) return cachedOwnerToken;
+  try {
+    const stored = await AsyncStorage.getItem(OWNER_TOKEN_KEY);
+    if (stored) {
+      cachedOwnerToken = stored;
+      return stored;
+    }
+  } catch {
+    // Storage read failed — fall through and mint a session-only token.
+  }
+  const token = generateOwnerToken();
+  cachedOwnerToken = token;
+  try {
+    await AsyncStorage.setItem(OWNER_TOKEN_KEY, token);
+  } catch {
+    // Non-fatal: token still works for this session, just won't persist.
+  }
+  return token;
+}
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -26,8 +64,15 @@ export class NetworkError extends Error {
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const ownerToken = await getOwnerToken();
   try {
-    return await fetch(`${BASE_URL}${path}`, options);
+    return await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        ...(options.headers ?? {}),
+        'X-Scan-Owner': ownerToken,
+      },
+    });
   } catch {
     throw new NetworkError('Could not reach the server. Check your connection.');
   }
@@ -65,7 +110,7 @@ interface PollScanPayload {
 }
 
 export async function scanUrl(url: string): Promise<ScanResult> {
-  // Create scan (no owner token needed for header checking)
+  // Create scan — apiFetch attaches the X-Scan-Owner token the backend requires.
   const createRes = await apiFetch('/api/scans', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
