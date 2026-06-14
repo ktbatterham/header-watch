@@ -17,7 +17,7 @@
           "scanner",
           "alert"
         ],
-        "releaseNotes": "Bug fixes and performance improvements.",
+        "releaseNotes": "• More reliable header scans\n• New: discover the rest of the SecURL suite from inside the app",
         "privacyPolicyUrl": "https://securl.online/privacy",
         "supportUrl": "https://securl.online/support"
       }
