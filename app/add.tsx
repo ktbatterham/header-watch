@@ -18,6 +18,7 @@ import { scanUrl } from '../src/api/client';
 import { addSnapshot } from '../src/storage/snapshots';
 import { useWatches } from '../src/hooks/useWatches';
 import { GradeBadge } from '../src/components/GradeBadge';
+import { EcosystemCard } from '../src/components/EcosystemCard';
 import type { ScanResult, HeaderSnapshot } from '../src/types';
 
 type Step = 'input' | 'scanning' | 'confirm';
@@ -192,6 +193,8 @@ export default function AddScreen() {
                 <Text style={styles.btnText}>Start watching</Text>
               </TouchableOpacity>
             </View>
+
+            <EcosystemCard />
           </>
         )}
       </ScrollView>
