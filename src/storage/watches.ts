@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { WatchTarget } from '../types';
 
-const KEY = 'hw:watches_v1';
+const STORAGE_NAMESPACE = 'hw:watches_v1';
 
 export async function loadWatches(): Promise<WatchTarget[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(STORAGE_NAMESPACE);
     if (!raw) return [];
     return JSON.parse(raw) as WatchTarget[];
   } catch {
@@ -14,7 +14,7 @@ export async function loadWatches(): Promise<WatchTarget[]> {
 }
 
 export async function saveWatches(watches: WatchTarget[]): Promise<void> {
-  await AsyncStorage.setItem(KEY, JSON.stringify(watches));
+  await AsyncStorage.setItem(STORAGE_NAMESPACE, JSON.stringify(watches));
 }
 
 export async function addWatch(watch: WatchTarget): Promise<void> {
