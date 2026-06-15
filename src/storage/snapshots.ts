@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { HeaderSnapshot } from '../types';
 
-const KEY = 'hw:snapshots_v1';
+const STORAGE_NAMESPACE = 'hw:snapshots_v1';
 const MAX_PER_WATCH = 20;
 
 export async function loadSnapshots(): Promise<HeaderSnapshot[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(STORAGE_NAMESPACE);
     if (!raw) return [];
     return JSON.parse(raw) as HeaderSnapshot[];
   } catch {
@@ -15,7 +15,7 @@ export async function loadSnapshots(): Promise<HeaderSnapshot[]> {
 }
 
 async function saveSnapshots(snapshots: HeaderSnapshot[]): Promise<void> {
-  await AsyncStorage.setItem(KEY, JSON.stringify(snapshots));
+  await AsyncStorage.setItem(STORAGE_NAMESPACE, JSON.stringify(snapshots));
 }
 
 export async function addSnapshot(snapshot: HeaderSnapshot): Promise<void> {

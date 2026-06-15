@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DriftEvent } from '../types';
 
-const KEY = 'hw:events_v1';
+const STORAGE_NAMESPACE = 'hw:events_v1';
 const MAX_EVENTS = 200;
 
 export async function loadEvents(): Promise<DriftEvent[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(STORAGE_NAMESPACE);
     if (!raw) return [];
     return JSON.parse(raw) as DriftEvent[];
   } catch {
@@ -15,7 +15,7 @@ export async function loadEvents(): Promise<DriftEvent[]> {
 }
 
 async function saveEvents(events: DriftEvent[]): Promise<void> {
-  await AsyncStorage.setItem(KEY, JSON.stringify(events));
+  await AsyncStorage.setItem(STORAGE_NAMESPACE, JSON.stringify(events));
 }
 
 export async function addEvent(event: DriftEvent): Promise<void> {
