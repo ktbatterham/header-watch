@@ -151,3 +151,27 @@ export async function healthCheck(): Promise<boolean> {
     return false;
   }
 }
+
+// ── Push device registration ───────────────────────────────────────────────────
+// Registers this device's raw APNs token with the backend so the server can send
+// drift pushes directly via APNs. appId is the bundle id (used as the apns-topic);
+// environment must match the build's aps-environment (dev = sandbox, TestFlight /
+// App Store = production). apiFetch attaches the X-Scan-Owner token.
+
+export type PushEnvironment = 'sandbox' | 'production';
+
+export async function registerDevice(
+  apnsToken: string,
+  appId: string,
+  environment: PushEnvironment,
+): Promise<void> {
+  const res = await apiFetch('/api/notification-devices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apnsToken, appId, environment }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new ApiError(res.status, body || `Device registration failed (${res.status}).`);
+  }
+}

@@ -1,5 +1,11 @@
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerDevice } from '../api/client';
 import type { DriftEvent } from '../types';
+
+const APP_ID = 'com.ktbatterham.headerwatch';
+const REGISTERED_TOKEN_KEY = 'hw:registered-apns-token';
 
 export async function requestNotificationPermissions(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();
@@ -48,4 +54,29 @@ export function configureNotificationHandler(): void {
       shouldShowList: true,
     }),
   });
+}
+
+// ── Remote push registration ────────────────────────────────────────────────
+// Fetch this device's native APNs token and register it with the backend so the
+// server can send drift pushes directly. Best-effort and idempotent: it skips
+// the network call when the token is unchanged. Requires the push entitlement
+// (provided by the expo-notifications config plugin) and granted permissions.
+export async function registerForRemotePush(): Promise<void> {
+  if (Platform.OS !== 'ios') return; // backend currently delivers via APNs only
+  try {
+    const tokenResult = await Notifications.getDevicePushTokenAsync();
+    const apnsToken = typeof tokenResult.data === 'string' ? tokenResult.data : '';
+    if (!apnsToken) return;
+
+    const prior = await AsyncStorage.getItem(REGISTERED_TOKEN_KEY).catch(() => null);
+    if (prior === apnsToken) return; // already registered with this exact token
+
+    // aps-environment is 'development' (sandbox) for dev builds, 'production' for
+    // TestFlight + App Store builds.
+    const environment = __DEV__ ? 'sandbox' : 'production';
+    await registerDevice(apnsToken, APP_ID, environment);
+    await AsyncStorage.setItem(REGISTERED_TOKEN_KEY, apnsToken).catch(() => {});
+  } catch {
+    // Non-fatal — the app works without remote push (on-device checks still run).
+  }
 }
