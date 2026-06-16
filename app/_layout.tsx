@@ -1,7 +1,11 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { configureNotificationHandler, requestNotificationPermissions } from '../src/notifications';
+import {
+  configureNotificationHandler,
+  requestNotificationPermissions,
+  registerForRemotePush,
+} from '../src/notifications';
 import { registerBackgroundFetch } from '../src/tasks/background';
 import { colors } from '../src/theme';
 
@@ -17,6 +21,8 @@ export default function RootLayout() {
     requestNotificationPermissions().then((granted) => {
       if (granted) {
         registerBackgroundFetch().catch(() => {});
+        // Register this device's APNs token so the backend can push drift alerts.
+        registerForRemotePush().catch(() => {});
       }
     });
   }, []);
