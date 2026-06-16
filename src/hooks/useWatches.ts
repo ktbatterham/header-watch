@@ -7,7 +7,10 @@ import {
 } from '../storage/watches';
 import { removeSnapshotsForWatch } from '../storage/snapshots';
 import { removeEventsForWatch } from '../storage/events';
+import { createMonitoringTarget, deleteMonitoringTarget } from '../api/client';
 import type { WatchTarget } from '../types';
+
+const APP_ID = 'com.ktbatterham.headerwatch';
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -26,9 +29,20 @@ export function useWatches() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const data = await loadWatches();
+    let data = await loadWatches();
     setWatches(data);
     setLoading(false);
+    // Backfill server monitoring for watches added before Phase 2 (best-effort,
+    // once each — undefined means never attempted).
+    const missing = data.filter((w) => w.serverTargetId === undefined);
+    if (missing.length > 0) {
+      for (const w of missing) {
+        const serverTargetId = await createMonitoringTarget(w.url, 'daily', APP_ID);
+        await updateWatch({ ...w, serverTargetId: serverTargetId ?? null });
+      }
+      data = await loadWatches();
+      setWatches(data);
+    }
   }, []);
 
   useEffect(() => {
@@ -51,8 +65,13 @@ export function useWatches() {
         checkIntervalHours: 24,
       };
       await addWatch(watch);
+      // Register server-side monitoring so the backend scans daily + pushes drift
+      // even when the app is closed. Best-effort — the local checker still runs.
+      const serverTargetId = await createMonitoringTarget(normalized, 'daily', APP_ID);
+      const stored: WatchTarget = { ...watch, serverTargetId: serverTargetId ?? null };
+      await updateWatch(stored);
       await refresh();
-      return watch;
+      return stored;
     },
     [refresh],
   );
@@ -67,6 +86,8 @@ export function useWatches() {
 
   const remove = useCallback(
     async (id: string) => {
+      const existing = (await loadWatches()).find((w) => w.id === id);
+      if (existing?.serverTargetId) await deleteMonitoringTarget(existing.serverTargetId);
       await removeWatch(id);
       await removeSnapshotsForWatch(id);
       await removeEventsForWatch(id);

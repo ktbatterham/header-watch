@@ -48,6 +48,9 @@ export interface WatchTarget {
   baselineSnapshotId: string | null;
   hasAlert: boolean; // unread drift event present
   checkIntervalHours: 1 | 6 | 24;
+  // Server-side monitoring-target id (backend scans daily + pushes drift).
+  // undefined = never attempted; null = attempted but not registered (local-only).
+  serverTargetId?: string | null;
 }
 
 // A point-in-time capture of headers + grade for a watch target
