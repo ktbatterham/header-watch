@@ -175,3 +175,38 @@ export async function registerDevice(
     throw new ApiError(res.status, body || `Device registration failed (${res.status}).`);
   }
 }
+
+// ── Server-side monitoring targets ─────────────────────────────────────────────
+// Registering a watched URL as a monitoring-target makes the backend scan it on a
+// schedule (daily) and push drift alerts via APNs — reliable even when the app is
+// closed, unlike on-device background fetch. Best-effort: failures fall back to
+// the local checker.
+
+export type MonitoringCadence = 'daily' | 'weekly';
+
+export async function createMonitoringTarget(
+  url: string,
+  cadence: MonitoringCadence,
+  appId: string,
+): Promise<string | null> {
+  try {
+    const res = await apiFetch('/api/monitoring-targets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, cadence, mode: 'standard', appId }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { target?: { id?: string } };
+    return data.target?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteMonitoringTarget(id: string): Promise<void> {
+  try {
+    await apiFetch(`/api/monitoring-targets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    // Best-effort.
+  }
+}
