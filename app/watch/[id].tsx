@@ -24,6 +24,7 @@ import { SectionCard } from '../../src/components/SectionCard';
 import { GradeBadge } from '../../src/components/GradeBadge';
 import { HeaderDiff } from '../../src/components/HeaderDiff';
 import { DriftEventRow } from '../../src/components/DriftEventRow';
+import { Sparkline } from '../../src/components/Sparkline';
 import type { WatchTarget, HeaderSnapshot, DriftEvent } from '../../src/types';
 
 export default function WatchDetailScreen() {
@@ -36,6 +37,7 @@ export default function WatchDetailScreen() {
   const [baseline, setBaseline] = useState<HeaderSnapshot | null>(null);
   const [latest, setLatest] = useState<HeaderSnapshot | null>(null);
   const [events, setEvents] = useState<DriftEvent[]>([]);
+  const [snapshots, setSnapshots] = useState<HeaderSnapshot[]>([]);
   const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
@@ -46,6 +48,7 @@ export default function WatchDetailScreen() {
     setWatch(w);
 
     const snapshots = await getSnapshotsForWatch(id);
+    setSnapshots(snapshots);
     const base = w.baselineSnapshotId
       ? await getSnapshotById(w.baselineSnapshotId)
       : null;
@@ -184,6 +187,19 @@ export default function WatchDetailScreen() {
         </View>
       </SectionCard>
 
+      {snapshots.length >= 2 && (
+        <SectionCard>
+          <Text style={styles.trendLabel}>Score trend</Text>
+          <Sparkline
+            data={[...snapshots].reverse().map((s) => ({ score: s.score, grade: s.grade }))}
+          />
+          <View style={styles.trendMeta}>
+            <Text style={styles.trendMetaText}>{snapshots.length} checks</Text>
+            <Text style={styles.trendMetaText}>now {snapshots[0].score}/100</Text>
+          </View>
+        </SectionCard>
+      )}
+
       {/* Header diff */}
       {showDiff && baseline && latest && (
         <View>
@@ -293,6 +309,23 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  trendLabel: {
+    fontSize: typography.xs,
+    fontWeight: '600',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.sm,
+  },
+  trendMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  trendMetaText: {
+    fontSize: typography.xs,
+    color: colors.textMuted,
   },
   content: {
     padding: spacing.md,
