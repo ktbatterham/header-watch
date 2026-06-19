@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import EventSource from 'react-native-sse';
 
 import type { ScanResult } from '../types';
 
 const BASE_URL = 'https://securl-app-production.up.railway.app';
 const POLL_INTERVAL_MS = 1_500;
 const POLL_MAX_ATTEMPTS = 80; // ~2 min
+const SSE_TIMEOUT_MS = 120_000; // give SSE the same ~2 min budget as polling
 const OWNER_TOKEN_KEY = 'header-watch:scan-owner-token';
 
 // ── Scan-owner token ──────────────────────────────────────────────────────────
@@ -95,8 +97,18 @@ function sleep(ms: number): Promise<void> {
 
 // ── Scan API ──────────────────────────────────────────────────────────────────
 
+// The backend returns direct paths for every related resource on scan creation
+// (detail/events/…); we consume what it hands back rather than constructing
+// paths, falling back to construction if an older server omits the block.
+interface ScanResources {
+  detail?: string;
+  events?: string;
+  digest?: string;
+}
+
 interface CreateScanPayload {
   scan: { id: string; status: string };
+  resources?: ScanResources;
   fromCache?: boolean;
 }
 
@@ -118,29 +130,100 @@ export async function scanUrl(url: string): Promise<ScanResult> {
   });
 
   const created = await readJson<CreateScanPayload>(createRes);
-  const scanId = created.scan.id;
+  // Consume the server-provided resource paths; fall back to constructing them
+  // for older servers that don't return the resources block.
+  const detailPath = created.resources?.detail ?? `/api/scans/${encodeURIComponent(created.scan.id)}`;
+  const eventsPath = created.resources?.events;
 
-  // If server returned a cached completed scan
+  // Cache hit — the result is already present.
   if (created.scan.status === 'completed') {
-    const directRes = await apiFetch(`/api/scans/${encodeURIComponent(scanId)}`);
-    const payload = await readJson<PollScanPayload>(directRes);
-    if (payload.scan.result) return payload.scan.result;
+    const cached = await fetchScanResult(detailPath);
+    if (cached) return cached;
   }
 
-  // Poll until completed or failed
+  // Wait for the server's terminal event over SSE instead of polling every 1.5s.
+  // The stream replays history on connect, so there's no race if the scan
+  // finishes first. Any SSE problem (older server, dropped connection, timeout)
+  // falls back to the poll loop below, so behaviour degrades gracefully.
+  if (eventsPath) {
+    try {
+      const ownerToken = await getOwnerToken();
+      const status = await waitForScanTerminalViaSSE(`${BASE_URL}${eventsPath}`, ownerToken);
+      if (status === 'failed') throw new ApiError(400, 'Scan failed on the server.');
+      const result = await fetchScanResult(detailPath);
+      if (result) return result;
+      // Terminal says completed but detail isn't ready yet — fall through to poll.
+    } catch (err) {
+      if (err instanceof ApiError) throw err; // a real scan failure, not an SSE issue
+      // Otherwise the SSE attempt failed — fall through to polling.
+    }
+  }
+
+  // Fallback: poll until completed or failed.
+  return pollForScanResult(detailPath);
+}
+
+// Fetch a scan's detail, returning its result when completed, throwing when the
+// scan failed, or null while it is still in progress. apiFetch attaches the owner.
+async function fetchScanResult(detailPath: string): Promise<ScanResult | null> {
+  const res = await apiFetch(detailPath);
+  const payload = await readJson<PollScanPayload>(res);
+  if (payload.scan.status === 'completed' && payload.scan.result) return payload.scan.result;
+  if (payload.scan.status === 'failed') {
+    throw new ApiError(400, payload.scan.error || 'Scan failed on the server.');
+  }
+  return null;
+}
+
+async function pollForScanResult(detailPath: string): Promise<ScanResult> {
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     await sleep(POLL_INTERVAL_MS);
-    const pollRes = await apiFetch(`/api/scans/${encodeURIComponent(scanId)}`);
-    const payload = await readJson<PollScanPayload>(pollRes);
-    if (payload.scan.status === 'completed' && payload.scan.result) {
-      return payload.scan.result;
-    }
-    if (payload.scan.status === 'failed') {
-      throw new ApiError(400, payload.scan.error || 'Scan failed on the server.');
-    }
+    const result = await fetchScanResult(detailPath);
+    if (result) return result;
   }
-
   throw new NetworkError('Scan is taking too long. Try again later.');
+}
+
+// Open an SSE connection to the scan's event stream and resolve with the terminal
+// status. The backend emits a `scan_terminal` event (and a `failed` event on
+// failure); we close as soon as one arrives. Rejects on connection error or
+// timeout so the caller can fall back to polling.
+function waitForScanTerminalViaSSE(
+  eventsUrl: string,
+  ownerToken: string,
+): Promise<'completed' | 'failed'> {
+  return new Promise((resolve, reject) => {
+    const es = new EventSource<'scan_terminal' | 'failed'>(eventsUrl, {
+      headers: { 'X-Scan-Owner': ownerToken },
+      pollingInterval: 0, // one-shot: don't auto-reconnect after the stream ends
+    });
+    let settled = false;
+
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      es.removeAllEventListeners();
+      es.close();
+      fn();
+    };
+
+    const timer = setTimeout(
+      () => finish(() => reject(new NetworkError('Scan event stream timed out.'))),
+      SSE_TIMEOUT_MS,
+    );
+
+    es.addEventListener('scan_terminal', (event) => {
+      try {
+        const data = JSON.parse(((event as { data?: string }).data) ?? '{}');
+        finish(() => resolve(data.status === 'failed' ? 'failed' : 'completed'));
+      } catch {
+        finish(() => reject(new NetworkError('Malformed scan event.')));
+      }
+    });
+    es.addEventListener('failed', () => finish(() => resolve('failed')));
+    es.addEventListener('error', () => finish(() => reject(new NetworkError('Scan event stream error.'))));
+  });
 }
 
 export async function healthCheck(): Promise<boolean> {
