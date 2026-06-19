@@ -17,6 +17,7 @@ import { colors, spacing, radius, typography } from '../src/theme';
 import { scanUrl } from '../src/api/client';
 import { addSnapshot } from '../src/storage/snapshots';
 import { useWatches } from '../src/hooks/useWatches';
+import { haptics } from '../src/haptics';
 import { GradeBadge } from '../src/components/GradeBadge';
 import { EcosystemCard } from '../src/components/EcosystemCard';
 import type { ScanResult, HeaderSnapshot } from '../src/types';
@@ -60,7 +61,9 @@ export default function AddScreen() {
       await addSnapshot(snapshot);
       setPendingSnapshotId(snapshotId);
       setStep('confirm');
+      haptics.light();
     } catch (e: any) {
+      haptics.error();
       setError(e.message ?? 'Scan failed. Check the URL and try again.');
       setStep('input');
     }
@@ -70,6 +73,7 @@ export default function AddScreen() {
     if (!scanResult || !pendingSnapshotId) return;
     const normalized = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
     await add(normalized, pendingSnapshotId);
+    haptics.success();
     router.back();
   };
 

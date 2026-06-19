@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import { useWatches } from '../../src/hooks/useWatches';
+import { haptics } from '../../src/haptics';
 import { WatchRow } from '../../src/components/WatchRow';
 import { getBackgroundFetchStatus } from '../../src/tasks/background';
 
@@ -51,7 +52,7 @@ export default function WatchesScreen() {
         </View>
         <TouchableOpacity
           style={styles.addBtn}
-          onPress={() => router.push('/add')}
+          onPress={() => { haptics.light(); router.push('/add'); }}
           activeOpacity={0.8}
         >
           <Ionicons name="add" size={22} color={colors.textPrimary} />
@@ -78,7 +79,7 @@ export default function WatchesScreen() {
             </Text>
             <TouchableOpacity
               style={styles.emptyBtn}
-              onPress={() => router.push('/add')}
+              onPress={() => { haptics.light(); router.push('/add'); }}
               activeOpacity={0.8}
             >
               <Text style={styles.emptyBtnText}>Add your first URL</Text>
@@ -89,12 +90,13 @@ export default function WatchesScreen() {
             <WatchRow
               key={watch.id}
               watch={watch}
-              onPress={() =>
+              onPress={() => {
+                haptics.light();
                 router.push({
                   pathname: '/watch/[id]',
                   params: { id: watch.id },
-                })
-              }
+                });
+              }}
             />
           ))
         )}
