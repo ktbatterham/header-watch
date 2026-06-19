@@ -18,6 +18,7 @@ import { getSnapshotsForWatch, getSnapshotById } from '../../src/storage/snapsho
 import { getEventsForWatch } from '../../src/storage/events';
 import { useChecker } from '../../src/hooks/useChecker';
 import { useWatches } from '../../src/hooks/useWatches';
+import { haptics } from '../../src/haptics';
 import { scheduleDriftNotification } from '../../src/notifications';
 import { updateWatch } from '../../src/storage/watches';
 import { SectionCard } from '../../src/components/SectionCard';
@@ -72,14 +73,17 @@ export default function WatchDetailScreen() {
 
   const handleCheckNow = async () => {
     if (!watch) return;
+    haptics.light();
     setChecking(true);
     try {
       const { driftEvent } = await checkTarget(watch);
       if (driftEvent) {
+        haptics.warning();
         await scheduleDriftNotification(driftEvent);
       }
       await load();
     } catch (e: any) {
+      haptics.error();
       Alert.alert('Check failed', e.message ?? 'Could not reach the server.');
     } finally {
       setChecking(false);
@@ -88,6 +92,7 @@ export default function WatchDetailScreen() {
 
   const handleRebaseline = () => {
     if (!watch || !latest) return;
+    haptics.medium();
     Alert.alert(
       'Update baseline',
       'Set the current headers as the new baseline? This will clear any pending alerts.',
@@ -106,6 +111,7 @@ export default function WatchDetailScreen() {
 
   const handleDelete = () => {
     if (!watch) return;
+    haptics.medium();
     Alert.alert(
       'Remove watch',
       `Stop watching ${watch.host}?`,
