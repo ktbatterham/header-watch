@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
+  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -13,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import { useWatches } from '../../src/hooks/useWatches';
+import { sendTestNotification } from '../../src/api/client';
 import { haptics } from '../../src/haptics';
 import { WatchRow } from '../../src/components/WatchRow';
 import { getBackgroundFetchStatus } from '../../src/tasks/background';
@@ -21,7 +23,30 @@ export default function WatchesScreen() {
   const router = useRouter();
   const { watches, loading, refresh, remove } = useWatches();
   const [refreshing, setRefreshing] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [bgStatus, setBgStatus] = useState<{ available: boolean; registered: boolean } | null>(null);
+
+  const handleTestNotification = () => {
+    Alert.alert(
+      'Send test notification',
+      'Send a test push to this device to confirm notifications are working?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async () => {
+            haptics.light();
+            setTesting(true);
+            const result = await sendTestNotification();
+            setTesting(false);
+            if (result.ok) haptics.success();
+            else haptics.warning();
+            Alert.alert(result.ok ? 'Sent' : 'Not sent', result.message);
+          },
+        },
+      ],
+    );
+  };
 
   useEffect(() => {
     getBackgroundFetchStatus().then(setBgStatus).catch(() => {});
@@ -50,13 +75,28 @@ export default function WatchesScreen() {
               : `${watches.length} URL${watches.length === 1 ? '' : 's'} monitored`}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => { haptics.light(); router.push('/add'); }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={22} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={handleTestNotification}
+            disabled={testing}
+            activeOpacity={0.8}
+            accessibilityLabel="Send a test notification"
+          >
+            {testing ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => { haptics.light(); router.push('/add'); }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -144,6 +184,16 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: typography.sm,
     marginTop: 2,
+  },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  iconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   addBtn: {
     width: 42,
