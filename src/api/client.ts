@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import EventSource from 'react-native-sse';
+import * as Application from 'expo-application';
 
 import type { ScanResult } from '../types';
 
@@ -8,6 +9,15 @@ const POLL_INTERVAL_MS = 1_500;
 const POLL_MAX_ATTEMPTS = 80; // ~2 min
 const SSE_TIMEOUT_MS = 120_000; // give SSE the same ~2 min budget as polling
 const OWNER_TOKEN_KEY = 'header-watch:scan-owner-token';
+
+// Product-telemetry headers sent on every backend call so the engine can attribute
+// usage by app/release (never by device or install). Additive: the backend ignores
+// them if absent or malformed. version+build comes from the installed binary.
+const CLIENT_ID = 'header-watch-ios';
+export const CLIENT_HEADERS: Record<string, string> = {
+  'X-SecURL-Client': CLIENT_ID,
+  'X-SecURL-Client-Version': `${Application.nativeApplicationVersion ?? '0'}+${Application.nativeBuildVersion ?? '0'}`,
+};
 
 // ── Scan-owner token ──────────────────────────────────────────────────────────
 // The SecURL backend scopes every scan to a per-client "owner" token and rejects
@@ -71,6 +81,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
     return await fetch(`${BASE_URL}${path}`, {
       ...options,
       headers: {
+        ...CLIENT_HEADERS,
         ...(options.headers ?? {}),
         'X-Scan-Owner': ownerToken,
       },
@@ -194,7 +205,7 @@ function waitForScanTerminalViaSSE(
 ): Promise<'completed' | 'failed'> {
   return new Promise((resolve, reject) => {
     const es = new EventSource<'scan_terminal' | 'failed'>(eventsUrl, {
-      headers: { 'X-Scan-Owner': ownerToken },
+      headers: { ...CLIENT_HEADERS, 'X-Scan-Owner': ownerToken },
       pollingInterval: 0, // one-shot: don't auto-reconnect after the stream ends
     });
     let settled = false;
