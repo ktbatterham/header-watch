@@ -13,6 +13,7 @@ const OWNER_TOKEN_KEY = 'header-watch:scan-owner-token';
 // Product-telemetry headers sent on every backend call so the engine can attribute
 // usage by app/release (never by device or install). Additive: the backend ignores
 // them if absent or malformed. version+build comes from the installed binary.
+const APP_ID = 'com.ktbatterham.headerwatch'; // bundle id, identifies the device's app registration
 const CLIENT_ID = 'header-watch-ios';
 export const CLIENT_HEADERS: Record<string, string> = {
   'X-SecURL-Client': CLIENT_ID,
@@ -243,6 +244,43 @@ export async function healthCheck(): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+// EXPECTED CONTRACT — confirm with the backend, then adjust this one place.
+// Assumes: POST /api/notification-devices/test  { appId }  scoped by X-Scan-Owner,
+// firing a test push to the device(s) registered for that owner + app.
+const TEST_NOTIFICATION_PATH = '/api/notification-devices/test';
+
+export interface TestNotificationResult {
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * Ask the backend to send a test push to this device, so the user can confirm the
+ * push pipeline on demand rather than waiting for real drift. Degrades gracefully:
+ * a 404 (endpoint not deployed yet) returns a friendly "not available" message.
+ */
+export async function sendTestNotification(): Promise<TestNotificationResult> {
+  try {
+    const res = await apiFetch(TEST_NOTIFICATION_PATH, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId: APP_ID }),
+    });
+    if (res.status === 404) {
+      return { ok: false, message: "Test notifications aren't available yet — check back after the next backend deploy." };
+    }
+    if (res.status === 400) {
+      return { ok: false, message: 'No registered device found. Make sure notifications are allowed, then try again.' };
+    }
+    if (!res.ok) {
+      return { ok: false, message: `Couldn't send a test notification (server ${res.status}).` };
+    }
+    return { ok: true, message: 'Test notification sent. It should arrive on your device shortly.' };
+  } catch {
+    return { ok: false, message: 'Could not reach the server. Check your connection.' };
   }
 }
 
