@@ -247,38 +247,49 @@ export async function healthCheck(): Promise<boolean> {
   }
 }
 
-// EXPECTED CONTRACT — confirm with the backend, then adjust this one place.
-// Assumes: POST /api/notification-devices/test  { appId }  scoped by X-Scan-Owner,
-// firing a test push to the device(s) registered for that owner + app.
-const TEST_NOTIFICATION_PATH = '/api/notification-devices/test';
-
 export interface TestNotificationResult {
   ok: boolean;
   message: string;
 }
 
+interface DeviceListResponse {
+  devices?: Array<{ id?: string; appId?: string }>;
+}
+
 /**
  * Ask the backend to send a test push to this device, so the user can confirm the
- * push pipeline on demand rather than waiting for real drift. Degrades gracefully:
- * a 404 (endpoint not deployed yet) returns a friendly "not available" message.
+ * push pipeline on demand rather than waiting for real drift. Per BACKEND-API.md
+ * the test endpoint is keyed by the registration id
+ * (POST /api/notification-devices/:id/test, owner-scoped), so we first look up
+ * this app's registration via the list (raw token never echoed; match on appId,
+ * falling back to the owner's only device). apiFetch attaches the owner + client
+ * headers.
  */
 export async function sendTestNotification(): Promise<TestNotificationResult> {
   try {
-    const res = await apiFetch(TEST_NOTIFICATION_PATH, {
+    const listRes = await apiFetch('/api/notification-devices');
+    if (!listRes.ok) {
+      return { ok: false, message: 'Could not check your device registration. Try again shortly.' };
+    }
+    const { devices = [] } = (await listRes.json()) as DeviceListResponse;
+    const device = devices.find((d) => d.appId === APP_ID) ?? devices[0];
+    if (!device?.id) {
+      return { ok: false, message: "This device isn't registered for notifications yet. Allow notifications, reopen the app, then try again." };
+    }
+
+    const res = await apiFetch(`/api/notification-devices/${encodeURIComponent(device.id)}/test`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appId: APP_ID }),
     });
+    if (res.ok) {
+      return { ok: true, message: 'Test notification sent. It should arrive on your device shortly.' };
+    }
+    if (res.status === 503) {
+      return { ok: false, message: "The server couldn't deliver the test push right now. Try again shortly." };
+    }
     if (res.status === 404) {
-      return { ok: false, message: "Test notifications aren't available yet — check back after the next backend deploy." };
+      return { ok: false, message: 'Your registration was not found. Reopen the app to re-register, then try again.' };
     }
-    if (res.status === 400) {
-      return { ok: false, message: 'No registered device found. Make sure notifications are allowed, then try again.' };
-    }
-    if (!res.ok) {
-      return { ok: false, message: `Couldn't send a test notification (server ${res.status}).` };
-    }
-    return { ok: true, message: 'Test notification sent. It should arrive on your device shortly.' };
+    return { ok: false, message: `Couldn't send a test notification (server ${res.status}).` };
   } catch {
     return { ok: false, message: 'Could not reach the server. Check your connection.' };
   }
