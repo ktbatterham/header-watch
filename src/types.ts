@@ -4,10 +4,17 @@ export type Grade = 'A+' | 'A' | 'B+' | 'B' | 'C+' | 'C' | 'D' | 'F' | 'U';
 export type Severity = 'good' | 'info' | 'warning' | 'critical';
 
 export interface SecurityHeaderResult {
+  // `name` is normalized at the API boundary (normalizeHeaders in api/client.ts).
+  // The engine actually returns `key` + `label`, not `name` — both kept optional
+  // so older stored snapshots (raw engine shape) still read safely.
   name: string;
+  key?: string;
+  label?: string;
   status: 'present' | 'missing' | 'weak' | 'informational';
   value?: string | null;
   severity: Severity;
+  summary?: string;
+  description?: string;
   recommendation?: string;
 }
 

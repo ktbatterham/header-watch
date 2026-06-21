@@ -175,12 +175,25 @@ export async function scanUrl(url: string): Promise<ScanResult> {
   return pollForScanResult(detailPath);
 }
 
+// The engine returns header objects shaped { key, label, value, status, ... } —
+// there is no `name` field. Normalize a stable `name` (label preferred, then key)
+// at the boundary so the rest of the app can rely on header.name.
+function normalizeResult(result: ScanResult): ScanResult {
+  const headers = (result.headers ?? []).map((h) => ({
+    ...h,
+    name: h.name ?? h.label ?? h.key ?? '',
+  }));
+  return { ...result, headers };
+}
+
 // Fetch a scan's detail, returning its result when completed, throwing when the
 // scan failed, or null while it is still in progress. apiFetch attaches the owner.
 async function fetchScanResult(detailPath: string): Promise<ScanResult | null> {
   const res = await apiFetch(detailPath);
   const payload = await readJson<PollScanPayload>(res);
-  if (payload.scan.status === 'completed' && payload.scan.result) return payload.scan.result;
+  if (payload.scan.status === 'completed' && payload.scan.result) {
+    return normalizeResult(payload.scan.result);
+  }
   if (payload.scan.status === 'failed') {
     throw new ApiError(400, payload.scan.error || 'Scan failed on the server.');
   }

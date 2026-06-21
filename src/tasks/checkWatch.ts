@@ -24,8 +24,12 @@ function diffHeaders(
   baseline: SecurityHeaderResult[],
   current: SecurityHeaderResult[],
 ): { added: string[]; removed: string[]; changed: ChangedHeader[] } {
-  const baseMap = new Map(baseline.map((h) => [h.name.toLowerCase(), h]));
-  const currMap = new Map(current.map((h) => [h.name.toLowerCase(), h]));
+  // Headers can arrive normalized (name) or in raw engine shape (label/key) —
+  // older stored snapshots predate normalization. Resolve a key/display safely.
+  const hkey = (h: SecurityHeaderResult) => (h.name ?? h.label ?? h.key ?? '').toLowerCase();
+  const hdisp = (h: SecurityHeaderResult) => h.name ?? h.label ?? h.key ?? '';
+  const baseMap = new Map(baseline.filter((h) => hkey(h)).map((h) => [hkey(h), h]));
+  const currMap = new Map(current.filter((h) => hkey(h)).map((h) => [hkey(h), h]));
 
   const added: string[] = [];
   const removed: string[] = [];
@@ -34,10 +38,10 @@ function diffHeaders(
   for (const [name, curr] of currMap) {
     const base = baseMap.get(name);
     if (!base) {
-      if (curr.status === 'present') added.push(curr.name);
+      if (curr.status === 'present') added.push(hdisp(curr));
     } else if (base.status !== curr.status) {
       changed.push({
-        name: curr.name,
+        name: hdisp(curr),
         previousStatus: base.status,
         currentStatus: curr.status,
         previousValue: base.value ?? null,
@@ -48,7 +52,7 @@ function diffHeaders(
 
   for (const [name, base] of baseMap) {
     if (!currMap.has(name) && base.status === 'present') {
-      removed.push(base.name);
+      removed.push(hdisp(base));
     }
   }
 

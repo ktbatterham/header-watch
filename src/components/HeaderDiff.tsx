@@ -46,8 +46,11 @@ function statusColor(status: SecurityHeaderResult['status']): string {
 }
 
 export function HeaderDiff({ baseline, current }: Props) {
-  const baseMap = new Map(baseline.map((h) => [h.name.toLowerCase(), h]));
-  const currMap = new Map(current.map((h) => [h.name.toLowerCase(), h]));
+  // Resolve a key/display safely — headers may be normalized (name) or in raw
+  // engine shape (label/key) from older stored snapshots.
+  const hkey = (h: SecurityHeaderResult) => (h.name ?? h.label ?? h.key ?? '').toLowerCase();
+  const baseMap = new Map(baseline.filter((h) => hkey(h)).map((h) => [hkey(h), h]));
+  const currMap = new Map(current.filter((h) => hkey(h)).map((h) => [hkey(h), h]));
 
   const allNames = new Set([...baseMap.keys(), ...currMap.keys()]);
   const rows: RowData[] = [];
@@ -55,7 +58,7 @@ export function HeaderDiff({ baseline, current }: Props) {
   for (const name of allNames) {
     const base = baseMap.get(name);
     const curr = currMap.get(name);
-    const displayName = curr?.name ?? base?.name ?? name;
+    const displayName = curr?.name ?? curr?.label ?? curr?.key ?? base?.name ?? base?.label ?? base?.key ?? name;
 
     if (!base && curr) {
       rows.push({ name: displayName, state: 'added', currStatus: curr.status, currValue: curr.value });
