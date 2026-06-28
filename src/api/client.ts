@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import EventSource from 'react-native-sse';
 import * as Application from 'expo-application';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 
 import type { ScanResult } from '../types';
 
@@ -8,7 +10,8 @@ const BASE_URL = 'https://securl-app-production.up.railway.app';
 const POLL_INTERVAL_MS = 1_500;
 const POLL_MAX_ATTEMPTS = 80; // ~2 min
 const SSE_TIMEOUT_MS = 120_000; // give SSE the same ~2 min budget as polling
-const OWNER_TOKEN_KEY = 'header-watch:scan-owner-token';
+const OWNER_TOKEN_KEY = 'header_watch_scan_owner_token';        // SecureStore key (no ':')
+const LEGACY_OWNER_TOKEN_KEY = 'header-watch:scan-owner-token'; // old AsyncStorage key — migrated once
 
 // Product-telemetry headers sent on every backend call so the engine can attribute
 // usage by app/release (never by device or install). Additive: the backend ignores
@@ -29,26 +32,40 @@ export const CLIENT_HEADERS: Record<string, string> = {
 
 let cachedOwnerToken: string | null = null;
 
-function generateOwnerToken(): string {
-  const segments = Array.from({ length: 4 }, () => Math.random().toString(36).slice(2));
-  return `hw-${Date.now().toString(36)}-${segments.join('')}`.slice(0, 120);
+// Crypto-secure owner token: 24 CSPRNG bytes → 48 hex chars (within the backend's
+// 24–256 char / >=8-distinct requirement). expo-crypto, not Math.random.
+async function cryptoToken(): Promise<string> {
+  const bytes = await Crypto.getRandomBytesAsync(24);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function getOwnerToken(): Promise<string> {
   if (cachedOwnerToken) return cachedOwnerToken;
+  // 1 — secure storage (iOS Keychain / Android Keystore)
   try {
-    const stored = await AsyncStorage.getItem(OWNER_TOKEN_KEY);
-    if (stored) {
-      cachedOwnerToken = stored;
-      return stored;
+    const secure = await SecureStore.getItemAsync(OWNER_TOKEN_KEY);
+    if (secure) { cachedOwnerToken = secure; return secure; }
+  } catch {
+    // SecureStore unavailable — fall through.
+  }
+  // 2 — migrate a pre-existing AsyncStorage token so existing installs keep their
+  //     server-side registration (scans / notification device / monitoring targets).
+  try {
+    const legacy = await AsyncStorage.getItem(LEGACY_OWNER_TOKEN_KEY);
+    if (legacy) {
+      cachedOwnerToken = legacy;
+      await SecureStore.setItemAsync(OWNER_TOKEN_KEY, legacy).catch(() => {});
+      await AsyncStorage.removeItem(LEGACY_OWNER_TOKEN_KEY).catch(() => {});
+      return legacy;
     }
   } catch {
-    // Storage read failed — fall through and mint a session-only token.
+    // Fall through and mint a fresh token.
   }
-  const token = generateOwnerToken();
+  // 3 — fresh install: mint a crypto-random token
+  const token = await cryptoToken();
   cachedOwnerToken = token;
   try {
-    await AsyncStorage.setItem(OWNER_TOKEN_KEY, token);
+    await SecureStore.setItemAsync(OWNER_TOKEN_KEY, token);
   } catch {
     // Non-fatal: token still works for this session, just won't persist.
   }
