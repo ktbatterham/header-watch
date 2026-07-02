@@ -15,8 +15,8 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 export async function scheduleDriftNotification(event: DriftEvent): Promise<void> {
   const isRegression = event.driftSeverity === 'regression';
   const title = isRegression
-    ? `⚠️ Header change detected — ${event.host}`
-    : `✓ Headers improved — ${event.host}`;
+    ? `⚠️ Header change detected: ${event.host}`
+    : `✓ Headers improved: ${event.host}`;
 
   const parts: string[] = [];
   if (event.removedHeaders.length > 0) {

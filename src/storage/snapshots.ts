@@ -31,6 +31,24 @@ export function addSnapshot(snapshot: HeaderSnapshot): Promise<void> {
   });
 }
 
+// Re-parent a snapshot created before its watch existed (the add flow captures
+// the baseline under a placeholder watchId). Without this the baseline never
+// shows up in the watch's snapshot list, and placeholder-bucket trimming could
+// silently delete older watches' baselines — killing their drift detection.
+export function claimSnapshot(snapshotId: string, watchId: string): Promise<void> {
+  return withLock(async () => {
+    const all = await loadSnapshots();
+    await saveSnapshots(all.map((s) => (s.id === snapshotId ? { ...s, watchId } : s)));
+  });
+}
+
+export function removeSnapshotById(id: string): Promise<void> {
+  return withLock(async () => {
+    const all = await loadSnapshots();
+    await saveSnapshots(all.filter((s) => s.id !== id));
+  });
+}
+
 export async function getSnapshotsForWatch(watchId: string): Promise<HeaderSnapshot[]> {
   const all = await loadSnapshots();
   return all
