@@ -5,7 +5,7 @@ import {
   updateWatch,
   removeWatch,
 } from '../storage/watches';
-import { removeSnapshotsForWatch } from '../storage/snapshots';
+import { claimSnapshot, removeSnapshotsForWatch } from '../storage/snapshots';
 import { removeEventsForWatch } from '../storage/events';
 import { createMonitoringTarget, deleteMonitoringTarget } from '../api/client';
 import type { WatchTarget } from '../types';
@@ -65,6 +65,10 @@ export function useWatches() {
         checkIntervalHours: 24,
       };
       await addWatch(watch);
+      // Re-parent the baseline snapshot (captured under '__pending__' before the
+      // watch id existed) so it appears in this watch's history and can't be
+      // trimmed out of the placeholder bucket.
+      await claimSnapshot(baselineSnapshotId, watch.id);
       // Register server-side monitoring so the backend scans daily + pushes drift
       // even when the app is closed. Best-effort — the local checker still runs.
       const serverTargetId = await createMonitoringTarget(normalized, 'daily', APP_ID);
@@ -98,13 +102,15 @@ export function useWatches() {
 
   const clearAlert = useCallback(
     async (id: string) => {
-      const w = watches.find((x) => x.id === id);
+      // Read from storage, not hook state — this hook instance's `watches` may
+      // not have loaded yet when a detail screen calls this right after mount.
+      const w = (await loadWatches()).find((x) => x.id === id);
       if (w && w.hasAlert) {
         await updateWatch({ ...w, hasAlert: false });
         await refresh();
       }
     },
-    [watches, refresh],
+    [refresh],
   );
 
   return { watches, loading, refresh, add, update, remove, clearAlert };

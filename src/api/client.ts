@@ -112,7 +112,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
 async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    if (res.status === 429) throw new ApiError(429, 'Rate limit reached — try again in a moment.');
+    if (res.status === 429) throw new ApiError(429, 'Rate limit reached. Try again in a moment.');
     if (res.status === 400) throw new ApiError(400, body || 'Invalid or unreachable URL.');
     if (res.status === 401) throw new ApiError(401, 'Session expired. Please try again.');
     throw new ApiError(res.status, `Server error (${res.status})`);

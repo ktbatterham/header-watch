@@ -15,7 +15,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '../src/theme';
 import { scanUrl } from '../src/api/client';
-import { addSnapshot } from '../src/storage/snapshots';
+import { addSnapshot, removeSnapshotById } from '../src/storage/snapshots';
+import { loadWatches } from '../src/storage/watches';
 import { useWatches } from '../src/hooks/useWatches';
 import { haptics } from '../src/haptics';
 import { GradeBadge } from '../src/components/GradeBadge';
@@ -42,6 +43,14 @@ export default function AddScreen() {
     const trimmed = url.trim();
     if (!trimmed) return;
     setError(null);
+    // Guard against watching the same URL twice (duplicate watches would each
+    // register their own server-side monitoring target).
+    const normalized = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
+    const existing = (await loadWatches()).find((w) => w.url === normalized);
+    if (existing) {
+      setError(`You're already watching ${existing.host}.`);
+      return;
+    }
     setStep('scanning');
     try {
       const result = await scanUrl(trimmed);
@@ -182,6 +191,12 @@ export default function AddScreen() {
               <TouchableOpacity
                 style={styles.secondaryBtn}
                 onPress={() => {
+                  // Abandoning this baseline — remove the pending snapshot so it
+                  // doesn't linger in the placeholder bucket.
+                  if (pendingSnapshotId) {
+                    removeSnapshotById(pendingSnapshotId).catch(() => {});
+                    setPendingSnapshotId(null);
+                  }
                   setStep('input');
                   setScanResult(null);
                 }}
