@@ -387,3 +387,70 @@ export async function deleteMonitoringTarget(id: string): Promise<void> {
     // Best-effort.
   }
 }
+
+// ── Capabilities + server-computed watch-list status ─────────────────────────
+// Discover additive backend features via GET /api/capabilities rather than
+// assuming endpoints exist. Cached per session; a failed fetch disables the
+// gated enrichment. Mirrors the SecURL / Cert Watch adoption.
+
+let cachedMonitoringFeatures: string[] | null | undefined;
+
+async function getMonitoringFeatures(): Promise<string[] | null> {
+  if (cachedMonitoringFeatures !== undefined) return cachedMonitoringFeatures;
+  try {
+    const res = await apiFetch('/api/capabilities');
+    if (!res.ok) { cachedMonitoringFeatures = null; return null; }
+    const data = (await res.json()) as { monitoring?: { features?: unknown } };
+    const f = data.monitoring?.features;
+    cachedMonitoringFeatures = Array.isArray(f)
+      ? f.filter((x): x is string => typeof x === 'string')
+      : null;
+  } catch {
+    cachedMonitoringFeatures = null;
+  }
+  return cachedMonitoringFeatures;
+}
+
+// Server-authored per-target watch-list state from /api/monitoring-mobile-summary
+// (backend monitoring-events). Consume only the compact status + change copy the
+// watch row renders, keyed by server target id. Defensively coerced.
+export interface ServerTargetStatus {
+  state: string | null;
+  severity: string | null;
+  changeTitle: string | null;
+  nextCheckAt: string | null;
+}
+
+function coerceTargetStatus(t: Record<string, unknown>): ServerTargetStatus {
+  const status = (t.status ?? {}) as Record<string, unknown>;
+  const change = (t.change ?? {}) as Record<string, unknown>;
+  const nextCheck = (t.nextCheck ?? {}) as Record<string, unknown>;
+  return {
+    state: typeof status.state === 'string' ? status.state : null,
+    severity: typeof status.severity === 'string' ? status.severity : null,
+    changeTitle:
+      change.changed === true && typeof change.title === 'string' ? change.title : null,
+    nextCheckAt: typeof nextCheck.scheduledAt === 'string' ? nextCheck.scheduledAt : null,
+  };
+}
+
+export async function fetchMonitoringStatus(): Promise<Map<string, ServerTargetStatus> | null> {
+  try {
+    const features = await getMonitoringFeatures();
+    if (!features?.includes('mobile-monitoring-status-v1')) return null;
+    const res = await apiFetch('/api/monitoring-mobile-summary');
+    if (!res.ok) return null;
+    const data = (await res.json()) as { targets?: unknown };
+    if (!Array.isArray(data.targets)) return null;
+    const map = new Map<string, ServerTargetStatus>();
+    for (const raw of data.targets) {
+      if (raw && typeof raw === 'object') {
+        const t = raw as Record<string, unknown>;
+        if (typeof t.id === 'string') map.set(t.id, coerceTargetStatus(t));
+      }
+    }
+    return map;
+  } catch {
+    return null;
+  }
+}

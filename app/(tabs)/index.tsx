@@ -21,7 +21,7 @@ import { getBackgroundFetchStatus } from '../../src/tasks/background';
 
 export default function WatchesScreen() {
   const router = useRouter();
-  const { watches, loading, refresh, remove } = useWatches();
+  const { watches, loading, serverStatus, refresh, remove } = useWatches();
   const [refreshing, setRefreshing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [bgStatus, setBgStatus] = useState<{ available: boolean; registered: boolean } | null>(null);
@@ -131,6 +131,7 @@ export default function WatchesScreen() {
             <WatchRow
               key={watch.id}
               watch={watch}
+              serverStatus={serverStatus.get(watch.id)}
               onPress={() => {
                 haptics.light();
                 router.push({
