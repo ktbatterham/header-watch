@@ -7,7 +7,12 @@ import {
 } from '../storage/watches';
 import { claimSnapshot, removeSnapshotsForWatch } from '../storage/snapshots';
 import { removeEventsForWatch } from '../storage/events';
-import { createMonitoringTarget, deleteMonitoringTarget } from '../api/client';
+import {
+  createMonitoringTarget,
+  deleteMonitoringTarget,
+  fetchMonitoringStatus,
+  type ServerTargetStatus,
+} from '../api/client';
 import type { WatchTarget } from '../types';
 
 const APP_ID = 'com.ktbatterham.headerwatch';
@@ -27,6 +32,21 @@ function hostFromUrl(url: string): string {
 export function useWatches() {
   const [watches, setWatches] = useState<WatchTarget[]>([]);
   const [loading, setLoading] = useState(true);
+  // Server-authored per-watch status keyed by LOCAL watch id (mapped via
+  // serverTargetId). Empty/absent = fall back to local fields.
+  const [serverStatus, setServerStatus] = useState<Map<string, ServerTargetStatus>>(new Map());
+
+  const loadServerStatus = useCallback(async (data: WatchTarget[]) => {
+    const byServerId = await fetchMonitoringStatus();
+    if (!byServerId) return;
+    const byLocalId = new Map<string, ServerTargetStatus>();
+    for (const w of data) {
+      if (w.serverTargetId && byServerId.has(w.serverTargetId)) {
+        byLocalId.set(w.id, byServerId.get(w.serverTargetId)!);
+      }
+    }
+    setServerStatus(byLocalId);
+  }, []);
 
   const refresh = useCallback(async () => {
     let data = await loadWatches();
@@ -43,7 +63,8 @@ export function useWatches() {
       data = await loadWatches();
       setWatches(data);
     }
-  }, []);
+    loadServerStatus(data);
+  }, [loadServerStatus]);
 
   useEffect(() => {
     refresh();
@@ -113,5 +134,5 @@ export function useWatches() {
     [refresh],
   );
 
-  return { watches, loading, refresh, add, update, remove, clearAlert };
+  return { watches, loading, serverStatus, refresh, add, update, remove, clearAlert };
 }
