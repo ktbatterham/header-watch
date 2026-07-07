@@ -10,26 +10,32 @@ import {
 import { registerBackgroundFetch } from '../src/tasks/background';
 import { loadWatches } from '../src/storage/watches';
 import { colors } from '../src/theme';
+import { View } from 'react-native';
+import { useOnboarding } from '../src/onboarding/useOnboarding';
+import { Onboarding } from '../src/components/Onboarding';
 
 // Background task must be imported here so it's defined before any render.
 import '../src/tasks/background';
 
 export default function RootLayout() {
   const router = useRouter();
+  const { seen, dismiss } = useOnboarding();
 
   useEffect(() => {
     configureNotificationHandler();
+  }, []);
 
-    // Ask for notification permission then register background task.
-    // Both are best-effort — the app works fine without them.
+  // Ask for notification permission + register background/push only AFTER
+  // onboarding — don't prompt before the app has explained what it does.
+  useEffect(() => {
+    if (seen !== true) return;
     requestNotificationPermissions().then((granted) => {
       if (granted) {
         registerBackgroundFetch().catch(() => {});
-        // Register this device's APNs token so the backend can push drift alerts.
         registerForRemotePush().catch(() => {});
       }
     });
-  }, []);
+  }, [seen]);
 
   // Tapping a drift push opens the matching watch (best-effort; falls back to the
   // watch list). The backend includes host/targetId in the notification data.
@@ -53,6 +59,17 @@ export default function RootLayout() {
     });
     return () => sub.remove();
   }, [router]);
+
+  if (seen === null) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+
+  if (seen === false) {
+    return (
+      <>
+        <StatusBar style="light" />
+        <Onboarding onDone={dismiss} />
+      </>
+    );
+  }
 
   return (
     <>
