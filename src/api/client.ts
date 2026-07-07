@@ -399,16 +399,18 @@ async function getMonitoringFeatures(): Promise<string[] | null> {
   if (cachedMonitoringFeatures !== undefined) return cachedMonitoringFeatures;
   try {
     const res = await apiFetch('/api/capabilities');
-    if (!res.ok) { cachedMonitoringFeatures = null; return null; }
+    // Only cache a SUCCESSFUL read. A transient failure/malformed response must
+    // NOT be cached, or a single network blip at launch would disable the gated
+    // enrichment for the whole session; leaving it uncached lets it retry.
+    if (!res.ok) return null;
     const data = (await res.json()) as { monitoring?: { features?: unknown } };
     const f = data.monitoring?.features;
-    cachedMonitoringFeatures = Array.isArray(f)
-      ? f.filter((x): x is string => typeof x === 'string')
-      : null;
+    if (!Array.isArray(f)) return null;
+    cachedMonitoringFeatures = f.filter((x): x is string => typeof x === 'string');
+    return cachedMonitoringFeatures;
   } catch {
-    cachedMonitoringFeatures = null;
+    return null;
   }
-  return cachedMonitoringFeatures;
 }
 
 // Server-authored per-target watch-list state from /api/monitoring-mobile-summary
