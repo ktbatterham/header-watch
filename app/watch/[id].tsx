@@ -19,6 +19,7 @@ import { getEventsForWatch } from '../../src/storage/events';
 import { useChecker } from '../../src/hooks/useChecker';
 import { useWatches } from '../../src/hooks/useWatches';
 import { haptics } from '../../src/haptics';
+import { openScanHandoff } from '../../src/lib/webHandoff';
 import { scheduleDriftNotification } from '../../src/notifications';
 import { updateWatch } from '../../src/storage/watches';
 import { SectionCard } from '../../src/components/SectionCard';
@@ -192,6 +193,18 @@ export default function WatchDetailScreen() {
           )}
         </View>
       </SectionCard>
+
+      {/* Mobile → web handoff: Header Watch covers headers; the web app runs a
+          full posture scan of the same target (contract MOBILE-WEB-GROWTH). */}
+      <TouchableOpacity
+        style={styles.webHandoffBtn}
+        onPress={() => { haptics.light(); openScanHandoff(watch.url); }}
+        activeOpacity={0.8}
+        accessibilityLabel="Run a full SecURL scan on the web"
+      >
+        <Ionicons name="open-outline" size={16} color={colors.accentLight} />
+        <Text style={styles.webHandoffText}>Run full SecURL scan</Text>
+      </TouchableOpacity>
 
       {snapshots.length >= 2 && (
         <SectionCard>
@@ -483,6 +496,21 @@ const styles = StyleSheet.create({
   deleteBtnText: {
     color: colors.critical,
     fontSize: typography.base,
+    fontWeight: '600',
+  },
+  webHandoffBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  webHandoffText: {
+    color: colors.accentLight,
+    fontSize: typography.sm,
     fontWeight: '600',
   },
 });
