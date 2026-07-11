@@ -38,19 +38,30 @@ export default function RootLayout() {
   }, [seen]);
 
   // Tapping a drift push opens the matching watch (best-effort; falls back to the
-  // watch list). The backend includes host/targetId in the notification data.
+  // watch list). The backend includes host/targetId in the notification data,
+  // and now (mobile-monitoring-explanations-v1) an eventId that lets the detail
+  // screen highlight the exact event that fired the push. Route by targetId
+  // first — host stays as the fallback for older pushes or absent identity.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const data = response.notification.request.content.data as Record<string, unknown>;
         const host = typeof data?.host === 'string' ? data.host : null;
         const targetId = typeof data?.targetId === 'string' ? data.targetId : null;
+        const eventId = typeof data?.eventId === 'string' ? data.eventId : null;
         loadWatches()
           .then((ws) => {
             const match = ws.find(
               (w) => (targetId && w.serverTargetId === targetId) || (host && w.host === host),
             );
-            router.push(match ? `/watch/${match.id}` : '/');
+            if (match) {
+              router.push({
+                pathname: '/watch/[id]',
+                params: eventId ? { id: match.id, eventId } : { id: match.id },
+              });
+            } else {
+              router.push('/');
+            }
           })
           .catch(() => {});
       } catch {

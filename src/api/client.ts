@@ -413,6 +413,80 @@ async function getMonitoringFeatures(): Promise<string[] | null> {
   }
 }
 
+// Server-authored, per-event explanation copy from /api/monitoring-mobile-summary
+// `targets[].events[]` (backend capability `mobile-monitoring-explanations-v1`,
+// engine PR #374, 2026-07-11). Render this text directly instead of composing
+// local "Removed: X, Added: Y" copy — the backend already knows what changed and
+// why it matters. `targetId`/`eventId`/`deepLink` let a push tap or an in-app
+// selection route straight to (and highlight) the event that triggered it.
+export interface ServerChangedEvidence {
+  label: string;
+  previous: unknown;
+  current: unknown;
+}
+
+export interface ServerDeepLink {
+  route: string;
+  targetId: string;
+  eventId: string;
+}
+
+export interface ServerMonitoringEvent {
+  eventId: string;
+  targetId: string;
+  title: string | null;
+  message: string | null;
+  severity: string | null;
+  nextAction: string | null;
+  changedEvidence: ServerChangedEvidence[];
+  deepLink: ServerDeepLink | null;
+}
+
+function coerceDeepLink(raw: unknown): ServerDeepLink | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const dl = raw as Record<string, unknown>;
+  if (
+    typeof dl.route === 'string' &&
+    typeof dl.targetId === 'string' &&
+    typeof dl.eventId === 'string'
+  ) {
+    return { route: dl.route, targetId: dl.targetId, eventId: dl.eventId };
+  }
+  return null;
+}
+
+function coerceChangedEvidence(raw: unknown): ServerChangedEvidence[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ServerChangedEvidence[] = [];
+  for (const item of raw) {
+    if (item && typeof item === 'object') {
+      const e = item as Record<string, unknown>;
+      if (typeof e.label === 'string') {
+        out.push({ label: e.label, previous: e.previous ?? null, current: e.current ?? null });
+      }
+    }
+  }
+  return out;
+}
+
+function coerceServerEvent(raw: unknown): ServerMonitoringEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  // targetId/eventId are the identity contract — without both, this event can't
+  // be routed to or highlighted, so treat it as absent rather than partial.
+  if (typeof e.targetId !== 'string' || typeof e.eventId !== 'string') return null;
+  return {
+    eventId: e.eventId,
+    targetId: e.targetId,
+    title: typeof e.title === 'string' ? e.title : null,
+    message: typeof e.message === 'string' ? e.message : null,
+    severity: typeof e.severity === 'string' ? e.severity : null,
+    nextAction: typeof e.nextAction === 'string' ? e.nextAction : null,
+    changedEvidence: coerceChangedEvidence(e.changedEvidence),
+    deepLink: coerceDeepLink(e.deepLink),
+  };
+}
+
 // Server-authored per-target watch-list state from /api/monitoring-mobile-summary
 // (backend monitoring-events). Consume only the compact status + change copy the
 // watch row renders, keyed by server target id. Defensively coerced.
@@ -421,18 +495,27 @@ export interface ServerTargetStatus {
   severity: string | null;
   changeTitle: string | null;
   nextCheckAt: string | null;
+  // Full server-authored explanation(s) for the most recent check, gated on
+  // `mobile-monitoring-explanations-v1`. Empty when the capability is absent or
+  // the target has no recent events — callers fall back to local drift copy.
+  events: ServerMonitoringEvent[];
 }
 
-function coerceTargetStatus(t: Record<string, unknown>): ServerTargetStatus {
+function coerceTargetStatus(t: Record<string, unknown>, includeEvents: boolean): ServerTargetStatus {
   const status = (t.status ?? {}) as Record<string, unknown>;
   const change = (t.change ?? {}) as Record<string, unknown>;
   const nextCheck = (t.nextCheck ?? {}) as Record<string, unknown>;
+  const events =
+    includeEvents && Array.isArray(t.events)
+      ? t.events.map(coerceServerEvent).filter((e): e is ServerMonitoringEvent => e !== null)
+      : [];
   return {
     state: typeof status.state === 'string' ? status.state : null,
     severity: typeof status.severity === 'string' ? status.severity : null,
     changeTitle:
       change.changed === true && typeof change.title === 'string' ? change.title : null,
     nextCheckAt: typeof nextCheck.scheduledAt === 'string' ? nextCheck.scheduledAt : null,
+    events,
   };
 }
 
@@ -440,6 +523,9 @@ export async function fetchMonitoringStatus(): Promise<Map<string, ServerTargetS
   try {
     const features = await getMonitoringFeatures();
     if (!features?.includes('mobile-monitoring-status-v1')) return null;
+    // Additive: only read the new explanation fields once the backend advertises
+    // the capability. Older servers still populate state/severity/changeTitle.
+    const includeEvents = features.includes('mobile-monitoring-explanations-v1');
     const res = await apiFetch('/api/monitoring-mobile-summary');
     if (!res.ok) return null;
     const data = (await res.json()) as { targets?: unknown };
@@ -448,7 +534,7 @@ export async function fetchMonitoringStatus(): Promise<Map<string, ServerTargetS
     for (const raw of data.targets) {
       if (raw && typeof raw === 'object') {
         const t = raw as Record<string, unknown>;
-        if (typeof t.id === 'string') map.set(t.id, coerceTargetStatus(t));
+        if (typeof t.id === 'string') map.set(t.id, coerceTargetStatus(t, includeEvents));
       }
     }
     return map;

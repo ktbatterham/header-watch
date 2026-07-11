@@ -26,13 +26,14 @@ import { SectionCard } from '../../src/components/SectionCard';
 import { GradeBadge } from '../../src/components/GradeBadge';
 import { HeaderDiff } from '../../src/components/HeaderDiff';
 import { DriftEventRow } from '../../src/components/DriftEventRow';
+import { ServerEventCard } from '../../src/components/ServerEventCard';
 import { Sparkline } from '../../src/components/Sparkline';
 import type { WatchTarget, HeaderSnapshot, DriftEvent } from '../../src/types';
 
 export default function WatchDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, eventId } = useLocalSearchParams<{ id: string; eventId?: string }>();
   const router = useRouter();
-  const { remove, clearAlert } = useWatches();
+  const { remove, clearAlert, serverStatus } = useWatches();
   const { checkTarget, rebaseline } = useChecker();
 
   const [watch, setWatch] = useState<WatchTarget | null>(null);
@@ -129,6 +130,8 @@ export default function WatchDetailScreen() {
       ],
     );
   };
+
+  const serverEvents = watch ? serverStatus.get(watch.id)?.events ?? [] : [];
 
   if (!watch) {
     return (
@@ -249,11 +252,33 @@ export default function WatchDetailScreen() {
         </View>
       )}
 
-      {/* Events */}
+      {/* Server-authored explanation for the most recent monitored check —
+          mobile-monitoring-explanations-v1. Renders backend title/message/
+          changedEvidence/severity/nextAction directly; no locally-composed
+          copy. Only present when the capability is live and this target has
+          registered server-side monitoring. */}
+      {serverEvents.length > 0 && (
+        <View>
+          <Text style={styles.sectionLabel}>What changed (server-monitored)</Text>
+          <SectionCard style={{ padding: 0 }}>
+            {serverEvents.map((event) => (
+              <ServerEventCard
+                key={event.eventId}
+                event={event}
+                highlighted={event.eventId === eventId}
+              />
+            ))}
+          </SectionCard>
+        </View>
+      )}
+
+      {/* On-device check history — the local drift fallback. Always shown when
+          present so nothing is lost if server monitoring is absent/disabled for
+          this target; independent of the server section above. */}
       {events.length > 0 && (
         <View>
           <Text style={styles.sectionLabel}>
-            Drift history ({events.length})
+            Local check history ({events.length})
           </Text>
           <SectionCard style={{ padding: 0 }}>
             {events.map((event) => (
