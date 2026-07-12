@@ -5,6 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 
 import type { ScanResult } from '../types';
+import { parseScanResult } from './schemas';
 
 const BASE_URL = 'https://securl-app-production.up.railway.app';
 const POLL_INTERVAL_MS = 1_500;
@@ -149,7 +150,9 @@ interface PollScanPayload {
   scan: {
     id: string;
     status: 'pending' | 'running' | 'completed' | 'failed';
-    result?: ScanResult;
+    // Raw, unvalidated engine payload — parseScanResult() in ./schemas is the
+    // boundary that turns this into a trusted ScanResult.
+    result?: unknown;
     error?: string;
   };
 }
@@ -196,24 +199,16 @@ export async function scanUrl(url: string): Promise<ScanResult> {
   return pollForScanResult(detailPath);
 }
 
-// The engine returns header objects shaped { key, label, value, status, ... } —
-// there is no `name` field. Normalize a stable `name` (label preferred, then key)
-// at the boundary so the rest of the app can rely on header.name.
-function normalizeResult(result: ScanResult): ScanResult {
-  const headers = (result.headers ?? []).map((h) => ({
-    ...h,
-    name: h.name ?? h.label ?? h.key ?? '',
-  }));
-  return { ...result, headers };
-}
-
 // Fetch a scan's detail, returning its result when completed, throwing when the
-// scan failed, or null while it is still in progress. apiFetch attaches the owner.
+// scan failed, or null while it is still in progress. apiFetch attaches the
+// owner. Validation + shaping of the raw engine payload happens in ./schemas
+// (`parseScanResult`) — the runtime boundary that replaced the old ad hoc
+// `normalizeResult()` shim (see that file for field-name verification notes).
 async function fetchScanResult(detailPath: string): Promise<ScanResult | null> {
   const res = await apiFetch(detailPath);
   const payload = await readJson<PollScanPayload>(res);
   if (payload.scan.status === 'completed' && payload.scan.result) {
-    return normalizeResult(payload.scan.result);
+    return parseScanResult(payload.scan.result);
   }
   if (payload.scan.status === 'failed') {
     throw new ApiError(400, payload.scan.error || 'Scan failed on the server.');
