@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 
 import type { ScanResult } from '../types';
-import { parseScanResult } from './schemas';
+import { parseScanResult, parseMonitoringHealth, type MonitoringHealth } from './schemas';
 
 const BASE_URL = 'https://securl-app-production.up.railway.app';
 const POLL_INTERVAL_MS = 1_500;
@@ -533,6 +533,23 @@ export async function fetchMonitoringStatus(): Promise<Map<string, ServerTargetS
       }
     }
     return map;
+  } catch {
+    return null;
+  }
+}
+
+// ── Monitoring health ─────────────────────────────────────────────────────────
+// GET /api/monitoring-health — server-side "is monitoring actually working"
+// signal for the watch-list footer. Live since backend 1.15.0, so no capability
+// gate. Best-effort: any failure (network, non-2xx, unparseable body) returns
+// null and the footer simply doesn't render. apiFetch attaches the X-Scan-Owner
+// token + client headers like every other call.
+
+export async function fetchMonitoringHealth(): Promise<MonitoringHealth | null> {
+  try {
+    const res = await apiFetch('/api/monitoring-health');
+    if (!res.ok) return null;
+    return parseMonitoringHealth(await res.json());
   } catch {
     return null;
   }

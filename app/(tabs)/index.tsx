@@ -14,7 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import { useWatches } from '../../src/hooks/useWatches';
-import { sendTestNotification } from '../../src/api/client';
+import { sendTestNotification, fetchMonitoringHealth } from '../../src/api/client';
+import type { MonitoringHealth } from '../../src/api/schemas';
 import { haptics } from '../../src/haptics';
 import { WatchRow } from '../../src/components/WatchRow';
 import { getBackgroundFetchStatus } from '../../src/tasks/background';
@@ -25,6 +26,7 @@ export default function WatchesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [bgStatus, setBgStatus] = useState<{ available: boolean; registered: boolean } | null>(null);
+  const [health, setHealth] = useState<MonitoringHealth | null>(null);
 
   const handleTestNotification = () => {
     Alert.alert(
@@ -50,6 +52,9 @@ export default function WatchesScreen() {
 
   useEffect(() => {
     getBackgroundFetchStatus().then(setBgStatus).catch(() => {});
+    // Best-effort: fetchMonitoringHealth() resolves null on any failure, and a
+    // null health simply hides the server-monitoring caption.
+    fetchMonitoringHealth().then(setHealth);
   }, []);
 
   useFocusEffect(
@@ -60,9 +65,30 @@ export default function WatchesScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    fetchMonitoringHealth().then(setHealth); // fire-and-forget alongside the list refresh
     await refresh();
     setRefreshing(false);
   };
+
+  // Server monitoring confidence caption. Degraded when the scheduler is off,
+  // the last sweep failed, or push delivery isn't configured server-side; a
+  // pushDevicesNeedingRegistration count means this owner's device(s) need
+  // notifications re-enabled before alerts can arrive.
+  const monitoringDegraded =
+    health !== null &&
+    (!health.schedulerEnabled ||
+      !health.lastSweepHealthy ||
+      !health.notificationsEnabled ||
+      !health.credentialsConfigured);
+  const monitoringCaption =
+    health === null
+      ? null
+      : (monitoringDegraded
+          ? 'Monitoring degraded: checks may be delayed'
+          : 'Server monitoring active · last sweep healthy') +
+        (health.pushDevicesNeedingRegistration > 0
+          ? ' · re-enable notifications to get alerts'
+          : '');
 
   return (
     <View style={styles.screen}>
@@ -144,6 +170,22 @@ export default function WatchesScreen() {
         )}
       </ScrollView>
 
+      {monitoringCaption !== null && watches.length > 0 && (
+        <View style={styles.monitoringStatus}>
+          <Ionicons
+            name={monitoringDegraded ? 'cloud-offline-outline' : 'cloud-done-outline'}
+            size={12}
+            color={monitoringDegraded ? colors.warning : colors.good}
+          />
+          <Text
+            style={[styles.monitoringStatusText, monitoringDegraded && styles.monitoringStatusDegraded]}
+            numberOfLines={1}
+          >
+            {monitoringCaption}
+          </Text>
+        </View>
+      )}
+
       {bgStatus && watches.length > 0 && (
         <View style={styles.bgStatus}>
           <Ionicons
@@ -207,6 +249,23 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  monitoringStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  monitoringStatusText: {
+    color: colors.textMuted,
+    fontSize: typography.xs,
+  },
+  monitoringStatusDegraded: {
+    color: colors.warning,
   },
   bgStatus: {
     flexDirection: 'row',

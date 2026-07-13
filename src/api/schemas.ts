@@ -100,6 +100,61 @@ const RawTopLevelSchema = z
   })
   .passthrough();
 
+// ── Monitoring health (GET /api/monitoring-health) ────────────────────────
+//
+// Compact "is server monitoring working" signal for the watch-list footer.
+// Only the fields the caption renders are extracted; a missing or malformed
+// sub-section degrades to healthy defaults so shape drift never falsely
+// alarms users — a fully unparseable payload returns null and the caption
+// simply doesn't render.
+//
+// Field names verified against a live production response (2026-07-13,
+// securl-app-production.up.railway.app).
+
+export interface MonitoringHealth {
+  schedulerEnabled: boolean;
+  lastSweepHealthy: boolean;
+  notificationsEnabled: boolean;
+  credentialsConfigured: boolean;
+  pushDevicesNeedingRegistration: number;
+}
+
+const RawMonitoringHealthSchema = z
+  .object({
+    summary: z
+      .object({ pushDevicesNeedingRegistration: z.number().catch(0) })
+      .catch({ pushDevicesNeedingRegistration: 0 }),
+    scheduler: z
+      .object({
+        enabled: z.boolean().catch(true),
+        lastSweepHealthy: z.boolean().catch(true),
+      })
+      .catch({ enabled: true, lastSweepHealthy: true }),
+    notifications: z
+      .object({
+        enabled: z.boolean().catch(true),
+        credentialsConfigured: z.boolean().catch(true),
+      })
+      .catch({ enabled: true, credentialsConfigured: true }),
+  })
+  .passthrough();
+
+export function parseMonitoringHealth(raw: unknown): MonitoringHealth | null {
+  const parsed = RawMonitoringHealthSchema.safeParse(raw);
+  if (!parsed.success) {
+    logShapeDrift('monitoring-health', parsed.error.issues);
+    return null;
+  }
+  const { summary, scheduler, notifications } = parsed.data;
+  return {
+    schedulerEnabled: scheduler.enabled,
+    lastSweepHealthy: scheduler.lastSweepHealthy,
+    notificationsEnabled: notifications.enabled,
+    credentialsConfigured: notifications.credentialsConfigured,
+    pushDevicesNeedingRegistration: summary.pushDevicesNeedingRegistration,
+  };
+}
+
 /**
  * Validate + shape a raw engine scan result into the app's `ScanResult`.
  * Replaces `normalizeResult()`. Never throws — a malformed sub-section
