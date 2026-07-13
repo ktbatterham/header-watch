@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Sentry from '@sentry/react-native';
 import * as Notifications from 'expo-notifications';
 import {
   configureNotificationHandler,
@@ -17,7 +18,17 @@ import { Onboarding } from '../src/components/Onboarding';
 // Background task must be imported here so it's defined before any render.
 import '../src/tasks/background';
 
-export default function RootLayout() {
+// Privacy-safe crash reporting: crashes only, no PII, no tracing, no user or
+// hostname context. Disabled entirely in development.
+Sentry.init({
+  dsn: 'https://03cc11a2da01c85673383fd29b6d0e81@o4511729899601920.ingest.de.sentry.io/4511729999478864',
+  enabled: !__DEV__,
+  sendDefaultPii: false,
+  tracesSampleRate: 0,
+  environment: __DEV__ ? 'development' : 'production',
+});
+
+function RootLayout() {
   const router = useRouter();
   const { seen, dismiss } = useOnboarding();
 
@@ -107,3 +118,5 @@ export default function RootLayout() {
     </>
   );
 }
+
+export default Sentry.wrap(RootLayout);
