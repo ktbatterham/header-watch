@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import type { MonitoringHealth } from '../../src/api/schemas';
 import { haptics } from '../../src/haptics';
 import { WatchRow } from '../../src/components/WatchRow';
 import { getBackgroundFetchStatus } from '../../src/tasks/background';
+import { deriveAttention } from '../../src/lib/attention';
 
 export default function WatchesScreen() {
   const router = useRouter();
@@ -80,6 +81,15 @@ export default function WatchesScreen() {
       !health.lastSweepHealthy ||
       !health.notificationsEnabled ||
       !health.credentialsConfigured);
+  // Attention-first ordering + rollup counts, derived from the server-authored
+  // per-target summary. With no summary data (offline / older server) this is a
+  // no-op: original order, zero counts, no attention line.
+  const attention = useMemo(
+    () => deriveAttention(watches, serverStatus),
+    [watches, serverStatus],
+  );
+  const attentionCount = attention.counts.attention + attention.counts.critical;
+
   const monitoringCaption =
     health === null
       ? null
@@ -126,6 +136,20 @@ export default function WatchesScreen() {
         </View>
       </View>
 
+      {attentionCount > 0 && (
+        <View style={styles.attentionBar}>
+          <View
+            style={[
+              styles.attentionDot,
+              attention.state === 'critical' && styles.attentionDotCritical,
+            ]}
+          />
+          <Text style={styles.attentionText}>
+            {attentionCount === 1 ? '1 needs attention' : `${attentionCount} need attention`}
+          </Text>
+        </View>
+      )}
+
       <ScrollView
         style={styles.list}
         contentContainerStyle={watches.length === 0 && styles.emptyContainer}
@@ -153,7 +177,7 @@ export default function WatchesScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          watches.map((watch) => (
+          attention.orderedWatches.map((watch) => (
             <WatchRow
               key={watch.id}
               watch={watch}
@@ -249,6 +273,27 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  attentionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  attentionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.warning,
+  },
+  attentionDotCritical: {
+    backgroundColor: colors.critical,
+  },
+  attentionText: {
+    color: colors.warning,
+    fontSize: typography.sm,
+    fontWeight: '600',
   },
   monitoringStatus: {
     flexDirection: 'row',
