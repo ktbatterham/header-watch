@@ -348,6 +348,26 @@ export async function registerDevice(
   }
 }
 
+// Android counterpart (backend `android-fcm-push-v1`, BACKEND_READY 2026-07-14):
+// same owner-scoped endpoint, discriminated by platform:"android" + fcmToken.
+// environment is accepted-and-ignored for FCM per the contract; we send it so the
+// body carries the same shared fields as the iOS registration.
+export async function registerAndroidDevice(
+  fcmToken: string,
+  appId: string,
+  environment: PushEnvironment,
+): Promise<void> {
+  const res = await apiFetch('/api/notification-devices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform: 'android', fcmToken, appId, environment }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new ApiError(res.status, body || `Device registration failed (${res.status}).`);
+  }
+}
+
 // ── Server-side monitoring targets ─────────────────────────────────────────────
 // Registering a watched URL as a monitoring-target makes the backend scan it on a
 // schedule (daily) and push drift alerts via APNs — reliable even when the app is
@@ -403,6 +423,26 @@ async function getMonitoringFeatures(): Promise<string[] | null> {
     if (!Array.isArray(f)) return null;
     cachedMonitoringFeatures = f.filter((x): x is string => typeof x === 'string');
     return cachedMonitoringFeatures;
+  } catch {
+    return null;
+  }
+}
+
+// Same discovery pattern for the capabilities `notifications` block (providers +
+// features such as `android-fcm-push-v1`). Cached per session on success only,
+// so a transient failure at launch can retry rather than pinning "unavailable".
+let cachedNotificationFeatures: string[] | null | undefined;
+
+export async function getNotificationFeatures(): Promise<string[] | null> {
+  if (cachedNotificationFeatures !== undefined) return cachedNotificationFeatures;
+  try {
+    const res = await apiFetch('/api/capabilities');
+    if (!res.ok) return null;
+    const data = (await res.json()) as { notifications?: { features?: unknown } };
+    const f = data.notifications?.features;
+    if (!Array.isArray(f)) return null;
+    cachedNotificationFeatures = f.filter((x): x is string => typeof x === 'string');
+    return cachedNotificationFeatures;
   } catch {
     return null;
   }

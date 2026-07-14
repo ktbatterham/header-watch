@@ -53,6 +53,10 @@ function RootLayout() {
   // and now (mobile-monitoring-explanations-v1) an eventId that lets the detail
   // screen highlight the exact event that fired the push. Route by targetId
   // first — host stays as the fallback for older pushes or absent identity.
+  // Android note: FCM delivers nested `data` objects JSON-string encoded. This
+  // listener only reads top-level string fields (host/targetId/eventId), which
+  // arrive identically on both platforms — if it ever reads an object-valued
+  // field (e.g. deepLink), add a JSON.parse fallback for the Android encoding.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
