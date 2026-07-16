@@ -1,10 +1,16 @@
 import type { WatchTarget } from '../types';
 import type { ServerTargetStatus } from '../api/client';
+import type { ParsedAttention } from '../api/schemas';
 
-// TEMPORARY client-side derivation. Backend request #7 (`monitoring-attention-v1`
-// rollup) will ship a server-authored attention summary; when it lands, swap the
-// internals of this module for the rollup and delete the local ranking. Keep ALL
-// attention derivation logic in this file so that swap stays single-file.
+// Two attention derivations live here, sharing one output shape (AttentionSummary)
+// so the watch list can swap between them transparently:
+//   • attentionFromServer() — PREFERRED. Consumes the server-authored
+//     `monitoring-attention-v1` rollup (summary counts/state + ordered rows).
+//     This is now live in production.
+//   • deriveAttention() — FALLBACK. The original client-side ranking off the
+//     per-target monitoring summary, used when the `monitoring-attention-v1`
+//     capability is absent or the rollup fetch fails.
+// Keep ALL attention derivation logic in this file so the two paths stay aligned.
 
 export type AttentionState = 'ok' | 'attention' | 'critical';
 
@@ -60,5 +66,44 @@ export function deriveAttention(
     counts: { attention, critical },
     orderedWatches:
       flagged.length === 0 ? watches : [...flagged.map((f) => f.watch), ...rest],
+  };
+}
+
+// Server-preferred attention: build the SAME AttentionSummary from the backend
+// `monitoring-attention-v1` rollup. Ordering follows the server's `attention[]`
+// row order, each row matched to a local watch by serverTargetId (the row's
+// `targetId`) then by host; unmatched watches keep their existing order (stable).
+// counts + state come from the server `summary` — it is authoritative for the
+// rollup bar even when a row has no local counterpart (e.g. cross-app targets).
+export function attentionFromServer(
+  server: ParsedAttention,
+  watches: WatchTarget[],
+): AttentionSummary {
+  const placed = new Set<string>(); // local watch ids already ordered
+  const ordered: WatchTarget[] = [];
+
+  for (const row of server.attention) {
+    const match = watches.find(
+      (w) =>
+        !placed.has(w.id) &&
+        ((w.serverTargetId != null && w.serverTargetId === row.targetId) ||
+          (row.host !== '' && w.host === row.host)),
+    );
+    if (match) {
+      placed.add(match.id);
+      ordered.push(match);
+    }
+  }
+
+  const rest = watches.filter((w) => !placed.has(w.id));
+
+  const critical = server.attention.filter((r) => r.severity === 'critical').length;
+  const needingAttention = server.summary.targetsNeedingAttention;
+  const attention = Math.max(0, needingAttention - critical);
+
+  return {
+    state: critical > 0 ? 'critical' : needingAttention > 0 ? 'attention' : 'ok',
+    counts: { attention, critical },
+    orderedWatches: ordered.length === 0 ? watches : [...ordered, ...rest],
   };
 }

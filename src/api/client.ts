@@ -5,7 +5,13 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 
 import type { ScanResult } from '../types';
-import { parseScanResult, parseMonitoringHealth, type MonitoringHealth } from './schemas';
+import {
+  parseScanResult,
+  parseMonitoringHealth,
+  parseMonitoringAttention,
+  type MonitoringHealth,
+  type ParsedAttention,
+} from './schemas';
 
 const BASE_URL = 'https://securl-app-production.up.railway.app';
 const POLL_INTERVAL_MS = 1_500;
@@ -590,6 +596,30 @@ export async function fetchMonitoringHealth(): Promise<MonitoringHealth | null> 
     const res = await apiFetch('/api/monitoring-health');
     if (!res.ok) return null;
     return parseMonitoringHealth(await res.json());
+  } catch {
+    return null;
+  }
+}
+
+// ── Monitoring attention rollup ────────────────────────────────────────────────
+// GET /api/monitoring-attention — server-authored "what needs attention now"
+// rollup (summary counts/state + ordered attention rows), gated on the
+// `monitoring-attention-v1` monitoring-feature. When the flag is absent we don't
+// call the endpoint and return null, so the watch list keeps deriving attention
+// locally (src/lib/attention.ts `deriveAttention`). Best-effort: any failure
+// (network, non-2xx, unparseable) returns null → same local fallback. apiFetch
+// attaches the X-Scan-Owner token + client headers.
+const ATTENTION_LIMIT = 50;
+
+export async function fetchMonitoringAttention(): Promise<ParsedAttention | null> {
+  try {
+    const features = await getMonitoringFeatures();
+    if (!features?.includes('monitoring-attention-v1')) return null;
+    const res = await apiFetch(
+      `/api/monitoring-attention?appId=${encodeURIComponent(APP_ID)}&limit=${ATTENTION_LIMIT}`,
+    );
+    if (!res.ok) return null;
+    return parseMonitoringAttention(await res.json());
   } catch {
     return null;
   }

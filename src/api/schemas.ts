@@ -155,6 +155,101 @@ export function parseMonitoringHealth(raw: unknown): MonitoringHealth | null {
   };
 }
 
+// ── Monitoring attention rollup (GET /api/monitoring-attention) ───────────
+//
+// Server-authored "what needs attention right now" rollup, backend capability
+// `monitoring-attention-v1`. Supersedes the app's local `deriveAttention`
+// ranking: the server owns the summary counts/state and the attention ordering,
+// the client just maps rows onto its local watches. Only the fields the watch
+// list consumes are extracted — summary counts/state for the rollup bar, and
+// per-row { targetId, host, severity } for matching + ordering. Tolerant per the
+// repo's zod-boundary convention: a malformed sub-section degrades to a safe
+// default and a fully unparseable payload returns null (caller falls back to the
+// local derivation).
+//
+// Response shapes verified against production 2026-07-16
+// (securl-app-production.up.railway.app).
+
+export interface ParsedAttentionSummary {
+  state: string;
+  highestSeverity: string | null;
+  targetsTotal: number;
+  targetsNeedingAttention: number;
+  targetsUnhealthy: number;
+  monitoringEnabled: boolean;
+}
+
+export interface ParsedAttentionRow {
+  targetId: string;
+  host: string;
+  severity: string | null;
+  state: string | null;
+}
+
+export interface ParsedAttention {
+  summary: ParsedAttentionSummary;
+  attention: ParsedAttentionRow[];
+}
+
+const AttentionSummaryDefaults: ParsedAttentionSummary = {
+  state: 'unknown',
+  highestSeverity: null,
+  targetsTotal: 0,
+  targetsNeedingAttention: 0,
+  targetsUnhealthy: 0,
+  monitoringEnabled: false,
+};
+
+const RawAttentionSummarySchema = z
+  .object({
+    state: z.string().catch('unknown'),
+    highestSeverity: z.string().nullable().catch(null),
+    targetsTotal: z.number().catch(0),
+    targetsNeedingAttention: z.number().catch(0),
+    targetsUnhealthy: z.number().catch(0),
+    monitoringEnabled: z.boolean().catch(false),
+  })
+  .passthrough()
+  .catch(AttentionSummaryDefaults);
+
+// targetId is the identity contract used to match a row to a local watch;
+// without it the row can't be routed, so treat it as absent (dropped).
+const RawAttentionRowSchema = z
+  .object({
+    targetId: z.string(),
+    host: z.string().catch(''),
+    severity: z.string().nullable().catch(null),
+    state: z.string().nullable().catch(null),
+  })
+  .passthrough();
+
+export function parseMonitoringAttention(raw: unknown): ParsedAttention | null {
+  if (!raw || typeof raw !== 'object') {
+    logShapeDrift('monitoring-attention', raw);
+    return null;
+  }
+  const r = raw as Record<string, unknown>;
+  const summary = RawAttentionSummarySchema.parse(r.summary ?? {});
+  const attention: ParsedAttentionRow[] = [];
+  if (Array.isArray(r.attention)) {
+    r.attention.forEach((item, i) => {
+      const parsed = RawAttentionRowSchema.safeParse(item);
+      if (!parsed.success) {
+        logShapeDrift(`monitoring-attention[${i}]`, parsed.error.issues);
+        return;
+      }
+      const row = parsed.data;
+      attention.push({
+        targetId: row.targetId,
+        host: row.host,
+        severity: row.severity,
+        state: row.state,
+      });
+    });
+  }
+  return { summary, attention };
+}
+
 /**
  * Validate + shape a raw engine scan result into the app's `ScanResult`.
  * Replaces `normalizeResult()`. Never throws — a malformed sub-section

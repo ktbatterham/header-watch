@@ -14,12 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { colors, spacing, typography, radius } from '../../src/theme';
 import { useWatches } from '../../src/hooks/useWatches';
-import { sendTestNotification, fetchMonitoringHealth } from '../../src/api/client';
-import type { MonitoringHealth } from '../../src/api/schemas';
+import { sendTestNotification, fetchMonitoringHealth, fetchMonitoringAttention } from '../../src/api/client';
+import type { MonitoringHealth, ParsedAttention } from '../../src/api/schemas';
 import { haptics } from '../../src/haptics';
 import { WatchRow } from '../../src/components/WatchRow';
 import { getBackgroundFetchStatus } from '../../src/tasks/background';
-import { deriveAttention } from '../../src/lib/attention';
+import { deriveAttention, attentionFromServer } from '../../src/lib/attention';
 
 export default function WatchesScreen() {
   const router = useRouter();
@@ -28,6 +28,9 @@ export default function WatchesScreen() {
   const [testing, setTesting] = useState(false);
   const [bgStatus, setBgStatus] = useState<{ available: boolean; registered: boolean } | null>(null);
   const [health, setHealth] = useState<MonitoringHealth | null>(null);
+  // Server-authored attention rollup (`monitoring-attention-v1`). null when the
+  // capability is absent or the fetch fails → fall back to local deriveAttention.
+  const [attentionServer, setAttentionServer] = useState<ParsedAttention | null>(null);
 
   const handleTestNotification = () => {
     Alert.alert(
@@ -56,6 +59,10 @@ export default function WatchesScreen() {
     // Best-effort: fetchMonitoringHealth() resolves null on any failure, and a
     // null health simply hides the server-monitoring caption.
     fetchMonitoringHealth().then(setHealth);
+    // Non-blocking: fetchMonitoringAttention() resolves null when the
+    // `monitoring-attention-v1` flag is absent or the fetch fails, keeping the
+    // local deriveAttention path (byte-identical to today).
+    fetchMonitoringAttention().then(setAttentionServer).catch(() => {});
   }, []);
 
   useFocusEffect(
@@ -67,6 +74,7 @@ export default function WatchesScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     fetchMonitoringHealth().then(setHealth); // fire-and-forget alongside the list refresh
+    fetchMonitoringAttention().then(setAttentionServer).catch(() => {}); // ditto
     await refresh();
     setRefreshing(false);
   };
@@ -81,12 +89,17 @@ export default function WatchesScreen() {
       !health.lastSweepHealthy ||
       !health.notificationsEnabled ||
       !health.credentialsConfigured);
-  // Attention-first ordering + rollup counts, derived from the server-authored
-  // per-target summary. With no summary data (offline / older server) this is a
-  // no-op: original order, zero counts, no attention line.
+  // Attention-first ordering + rollup counts. Prefer the server-authored
+  // `monitoring-attention-v1` rollup when the flag is present AND the fetch
+  // returned data (attentionServer non-null); otherwise fall back to the local
+  // per-target derivation. With no data on either path this is a no-op: original
+  // order, zero counts, no attention line.
   const attention = useMemo(
-    () => deriveAttention(watches, serverStatus),
-    [watches, serverStatus],
+    () =>
+      attentionServer
+        ? attentionFromServer(attentionServer, watches)
+        : deriveAttention(watches, serverStatus),
+    [attentionServer, watches, serverStatus],
   );
   const attentionCount = attention.counts.attention + attention.counts.critical;
 
