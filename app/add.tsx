@@ -18,6 +18,7 @@ import { scanUrl } from '../src/api/client';
 import { addSnapshot, removeSnapshotById } from '../src/storage/snapshots';
 import { loadWatches } from '../src/storage/watches';
 import { useWatches } from '../src/hooks/useWatches';
+import { maybePromptForReview } from '../src/lib/reviewPrompt';
 import { haptics } from '../src/haptics';
 import { GradeBadge } from '../src/components/GradeBadge';
 import { EcosystemCard } from '../src/components/EcosystemCard';
@@ -83,6 +84,9 @@ export default function AddScreen() {
     const normalized = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
     await add(normalized, pendingSnapshotId);
     haptics.success();
+    // Genuine positive moment: a watch was saved. Fire-and-forget a possible
+    // ratings prompt (gated + silent) without blocking navigation.
+    void maybePromptForReview();
     router.back();
   };
 
