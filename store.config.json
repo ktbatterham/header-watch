@@ -17,7 +17,7 @@
           "scanner",
           "alert"
         ],
-        "releaseNotes": "• More reliable header scans\n• New: discover the rest of the SecURL suite from inside the app",
+        "releaseNotes": "• Your watch list now leads with what needs attention first\n• See at a glance whether server monitoring is healthy\n• Android devices now receive push alerts\n• Reliability improvements",
         "privacyPolicyUrl": "https://securl.online/privacy",
         "supportUrl": "https://securl.online/support"
       }
