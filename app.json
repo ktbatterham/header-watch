@@ -2,7 +2,7 @@
   "expo": {
     "name": "Header Watch",
     "slug": "header-watch",
-    "version": "1.0.5",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "headerwatch",
