@@ -18,6 +18,7 @@ import { sendTestNotification, fetchMonitoringHealth, fetchMonitoringAttention }
 import type { MonitoringHealth, ParsedAttention } from '../../src/api/schemas';
 import { haptics } from '../../src/haptics';
 import { WatchRow } from '../../src/components/WatchRow';
+import { EcosystemCard } from '../../src/components/EcosystemCard';
 import { getBackgroundFetchStatus } from '../../src/tasks/background';
 import { deriveAttention, attentionFromServer } from '../../src/lib/attention';
 
@@ -205,6 +206,12 @@ export default function WatchesScreen() {
             />
           ))
         )}
+
+        {/* Suite cross-promotion — pinned at the bottom of scroll content so it
+            shows in both the empty state and below the watch list. */}
+        <View style={styles.ecosystemWrap}>
+          <EcosystemCard />
+        </View>
       </ScrollView>
 
       {monitoringCaption !== null && watches.length > 0 && (
@@ -340,6 +347,10 @@ const styles = StyleSheet.create({
   },
   bgStatusActive: {
     color: colors.good,
+  },
+  ecosystemWrap: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   emptyContainer: {
     flexGrow: 1,
