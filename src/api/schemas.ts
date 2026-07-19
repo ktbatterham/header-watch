@@ -264,27 +264,40 @@ export function parseMonitoringAttention(raw: unknown): ParsedAttention | null {
 // "not yet evaluated" — callers must render no policy claim and keep
 // existing watch-list/summary state unchanged (see WatchRow / watch/[id]).
 //
-// Field shape taken from the documented production contract in
-// MOBILE_BACKEND_CHANNEL.md (2026-07-19 BACKEND_READY entry, request #9):
-// verdict/policy/policyName/policyVersion/changedSince/evaluatedAt plus a
-// server-authored headline, aggregate summary, and bounded topViolations.
-// The channel's production-evidence paragraph describes a verified
-// unknown -> pass transition with zero violations and matching policy
-// identity/evaluation timestamp across mobile summary and timeline, but no
-// live example with a populated `policyFit` block was independently
-// captured for this change (a disposable owner-scoped target created against
-// production during this work came back with `observationPolicy: null` /
-// `policyFit: null` — attaching an observation policy isn't exposed on the
-// owner-scoped target-creation endpoint, so this parser is built solely from
-// the documented shape). Every field here is tolerant/optional so an
-// unanticipated shape degrades to nulls/empty rather than dropping the
-// surrounding target status.
+// Field shape confirmed by reading the backend's generating code directly
+// (securl/server/scanDtos.mjs: buildMonitoringPolicyFit / buildMobileTargetSummary
+// / buildAttentionItemFromTarget, sibling repo, read-only, 2026-07-19) rather
+// than relying solely on the channel doc's prose — that cross-check caught
+// that `summary` is an aggregate-counts OBJECT (not free text) and
+// `topViolations` items are full violation objects (not `{label, detail}`).
+// `policyFit` sits at the top level of each target entry in
+// `GET /api/monitoring-mobile-summary` (`targets[].policyFit`),
+// `GET /api/monitoring-attention` (`attention[].policyFit`), and the target
+// timeline payload; it is `null` whenever the target has no `observationPolicy`
+// attached, which is the common case today. Every field here is
+// tolerant/optional so an unanticipated shape degrades to nulls/empty rather
+// than dropping the surrounding target status.
 
 export type PolicyFitVerdict = 'pass' | 'drift' | 'fail' | 'unknown';
 
+const KNOWN_POLICY_FIT_VERDICTS = new Set<PolicyFitVerdict>(['pass', 'drift', 'fail', 'unknown']);
+
 export interface PolicyFitViolation {
-  label: string;
-  detail: string | null;
+  id: string | null;
+  ruleId: string | null;
+  title: string | null;
+  severity: string | null;
+  scope: string | null;
+  kind: string | null;
+  subject: string | null;
+  summary: string | null;
+}
+
+export interface PolicyFitSummary {
+  rulesEvaluated: number;
+  violations: number;
+  bySeverity: { critical: number; warning: number; info: number };
+  highestSeverity: string | null;
 }
 
 export interface PolicyFit {
@@ -295,34 +308,61 @@ export interface PolicyFit {
   changedSince: string | null;
   evaluatedAt: string | null;
   headline: string | null;
-  summary: string | null;
+  // Aggregate counts, not free text — bounded explanatory detail only, never
+  // used to compute a verdict client-side.
+  summary: PolicyFitSummary | null;
+  // Bounded (server caps at 3) server-authored violation detail.
   topViolations: PolicyFitViolation[];
 }
 
-const PolicyFitVerdictSchema = z
-  .enum(['pass', 'drift', 'fail', 'unknown'])
-  .catch('unknown' as PolicyFitVerdict);
-
 const PolicyFitViolationSchema = z
   .object({
-    label: z.string().catch(''),
-    detail: z.string().nullable().catch(null),
+    id: z.string().nullable().catch(null),
+    ruleId: z.string().nullable().catch(null),
+    title: z.string().nullable().catch(null),
+    severity: z.string().nullable().catch(null),
+    scope: z.string().nullable().catch(null),
+    kind: z.string().nullable().catch(null),
+    subject: z.string().nullable().catch(null),
+    summary: z.string().nullable().catch(null),
+  })
+  .passthrough();
+
+const PolicyFitSummarySchema = z
+  .object({
+    rulesEvaluated: z.number().catch(0),
+    violations: z.number().catch(0),
+    bySeverity: z
+      .object({
+        critical: z.number().catch(0),
+        warning: z.number().catch(0),
+        info: z.number().catch(0),
+      })
+      .passthrough()
+      .catch({ critical: 0, warning: 0, info: 0 }),
+    highestSeverity: z.string().nullable().catch(null),
   })
   .passthrough();
 
 const PolicyFitSchema = z
   .object({
-    verdict: PolicyFitVerdictSchema,
+    verdict: z.string().nullable().catch(null),
     policy: z.string().nullable().catch(null),
     policyName: z.string().nullable().catch(null),
     policyVersion: z.string().nullable().catch(null),
     changedSince: z.string().nullable().catch(null),
     evaluatedAt: z.string().nullable().catch(null),
     headline: z.string().nullable().catch(null),
-    summary: z.string().nullable().catch(null),
-    topViolations: z.array(PolicyFitViolationSchema).catch([]),
+    summary: PolicyFitSummarySchema.nullable().optional(),
+    topViolations: z.array(z.unknown()).catch([]),
   })
   .passthrough();
+
+function coercePolicyViolation(raw: unknown): PolicyFitViolation | null {
+  const parsed = PolicyFitViolationSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  return parsed.data;
+}
 
 /**
  * Parse an optional `policyFit` block. Absent/null/malformed all return
@@ -340,16 +380,22 @@ export function parsePolicyFit(raw: unknown): PolicyFit | null {
     return null;
   }
   const p = parsed.data;
+  const verdict: PolicyFitVerdict = KNOWN_POLICY_FIT_VERDICTS.has(p.verdict as PolicyFitVerdict)
+    ? (p.verdict as PolicyFitVerdict)
+    : 'unknown';
   return {
-    verdict: p.verdict,
+    verdict,
     policy: p.policy,
     policyName: p.policyName,
     policyVersion: p.policyVersion,
     changedSince: p.changedSince,
     evaluatedAt: p.evaluatedAt,
     headline: p.headline,
-    summary: p.summary,
-    topViolations: p.topViolations.map((v) => ({ label: v.label, detail: v.detail })),
+    summary: p.summary ?? null,
+    topViolations: p.topViolations
+      .map(coercePolicyViolation)
+      .filter((v): v is PolicyFitViolation => v !== null)
+      .slice(0, 3),
   };
 }
 

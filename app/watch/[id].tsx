@@ -296,16 +296,21 @@ export default function WatchDetailScreen() {
             </View>
 
             {policyFit.headline && <Text style={styles.policyHeadline}>{policyFit.headline}</Text>}
-            {policyFit.summary && <Text style={styles.policySummary}>{policyFit.summary}</Text>}
+            {policyFit.summary && policyFit.summary.violations > 0 && (
+              <Text style={styles.policySummary}>
+                {policyFit.summary.violations} of {policyFit.summary.rulesEvaluated} rule
+                {policyFit.summary.rulesEvaluated === 1 ? '' : 's'} violated
+              </Text>
+            )}
 
             {policyFit.topViolations.length > 0 && (
               <View style={styles.violationsList}>
                 {policyFit.topViolations.map((v, i) => (
-                  <View key={i} style={styles.violationRow}>
+                  <View key={v.id ?? i} style={styles.violationRow}>
                     <Ionicons name="ellipse" size={4} color={colors.textMuted} style={styles.violationBullet} />
                     <Text style={styles.violationText} numberOfLines={2}>
-                      {v.label}
-                      {v.detail ? `: ${v.detail}` : ''}
+                      {v.title ?? v.subject ?? 'Policy violation'}
+                      {v.summary ? `: ${v.summary}` : ''}
                     </Text>
                   </View>
                 ))}
