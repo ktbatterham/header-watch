@@ -9,8 +9,10 @@ import {
   parseScanResult,
   parseMonitoringHealth,
   parseMonitoringAttention,
+  parsePolicyFit,
   type MonitoringHealth,
   type ParsedAttention,
+  type PolicyFit,
 } from './schemas';
 
 const BASE_URL = 'https://securl-app-production.up.railway.app';
@@ -540,9 +542,19 @@ export interface ServerTargetStatus {
   // `mobile-monitoring-explanations-v1`. Empty when the capability is absent or
   // the target has no recent events — callers fall back to local drift copy.
   events: ServerMonitoringEvent[];
+  // Server-authored policy verdict, gated on `monitoring-policy-fit-v1`
+  // (backend request #9). Posture targets with an `observationPolicy` MAY
+  // carry this; cert targets never do. `null` when the capability is absent,
+  // the target has no block, or the block failed to parse — callers must
+  // treat that identically to `verdict: "unknown"` (no policy claim shown).
+  policyFit: PolicyFit | null;
 }
 
-function coerceTargetStatus(t: Record<string, unknown>, includeEvents: boolean): ServerTargetStatus {
+function coerceTargetStatus(
+  t: Record<string, unknown>,
+  includeEvents: boolean,
+  includePolicyFit: boolean,
+): ServerTargetStatus {
   const status = (t.status ?? {}) as Record<string, unknown>;
   const change = (t.change ?? {}) as Record<string, unknown>;
   const nextCheck = (t.nextCheck ?? {}) as Record<string, unknown>;
@@ -557,6 +569,7 @@ function coerceTargetStatus(t: Record<string, unknown>, includeEvents: boolean):
       change.changed === true && typeof change.title === 'string' ? change.title : null,
     nextCheckAt: typeof nextCheck.scheduledAt === 'string' ? nextCheck.scheduledAt : null,
     events,
+    policyFit: includePolicyFit ? parsePolicyFit(t.policyFit) : null,
   };
 }
 
@@ -567,6 +580,10 @@ export async function fetchMonitoringStatus(): Promise<Map<string, ServerTargetS
     // Additive: only read the new explanation fields once the backend advertises
     // the capability. Older servers still populate state/severity/changeTitle.
     const includeEvents = features.includes('mobile-monitoring-explanations-v1');
+    // Additive: only read `policyFit` once the backend advertises
+    // `monitoring-policy-fit-v1`. Older servers simply don't carry the field,
+    // which coerceTargetStatus already treats as absent.
+    const includePolicyFit = features.includes('monitoring-policy-fit-v1');
     const res = await apiFetch('/api/monitoring-mobile-summary');
     if (!res.ok) return null;
     const data = (await res.json()) as { targets?: unknown };
@@ -575,7 +592,8 @@ export async function fetchMonitoringStatus(): Promise<Map<string, ServerTargetS
     for (const raw of data.targets) {
       if (raw && typeof raw === 'object') {
         const t = raw as Record<string, unknown>;
-        if (typeof t.id === 'string') map.set(t.id, coerceTargetStatus(t, includeEvents));
+        if (typeof t.id === 'string')
+          map.set(t.id, coerceTargetStatus(t, includeEvents, includePolicyFit));
       }
     }
     return map;

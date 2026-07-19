@@ -250,6 +250,109 @@ export function parseMonitoringAttention(raw: unknown): ParsedAttention | null {
   return { summary, attention };
 }
 
+// ── Monitoring policy fit (GET /api/monitoring-mobile-summary, target detail,
+//    GET /api/monitoring-attention, target timeline) ───────────────────────
+//
+// Server-authored policy verdict for posture-carrying monitoring targets,
+// backend capability `monitoring-policy-fit-v1` (BACKEND_READY 2026-07-19,
+// request #9). The backend policy evaluator is authoritative — this app must
+// never parse manifests or (re)compute verdict/violations locally; it only
+// ever displays what's already here. Additive: posture targets with an
+// `observationPolicy` MAY carry this block; certificate targets keep their
+// existing certificate policy/profile fields and must not be assumed to
+// carry `policyFit`. A missing/null block or `verdict: "unknown"` both mean
+// "not yet evaluated" — callers must render no policy claim and keep
+// existing watch-list/summary state unchanged (see WatchRow / watch/[id]).
+//
+// Field shape taken from the documented production contract in
+// MOBILE_BACKEND_CHANNEL.md (2026-07-19 BACKEND_READY entry, request #9):
+// verdict/policy/policyName/policyVersion/changedSince/evaluatedAt plus a
+// server-authored headline, aggregate summary, and bounded topViolations.
+// The channel's production-evidence paragraph describes a verified
+// unknown -> pass transition with zero violations and matching policy
+// identity/evaluation timestamp across mobile summary and timeline, but no
+// live example with a populated `policyFit` block was independently
+// captured for this change (a disposable owner-scoped target created against
+// production during this work came back with `observationPolicy: null` /
+// `policyFit: null` — attaching an observation policy isn't exposed on the
+// owner-scoped target-creation endpoint, so this parser is built solely from
+// the documented shape). Every field here is tolerant/optional so an
+// unanticipated shape degrades to nulls/empty rather than dropping the
+// surrounding target status.
+
+export type PolicyFitVerdict = 'pass' | 'drift' | 'fail' | 'unknown';
+
+export interface PolicyFitViolation {
+  label: string;
+  detail: string | null;
+}
+
+export interface PolicyFit {
+  verdict: PolicyFitVerdict;
+  policy: string | null;
+  policyName: string | null;
+  policyVersion: string | null;
+  changedSince: string | null;
+  evaluatedAt: string | null;
+  headline: string | null;
+  summary: string | null;
+  topViolations: PolicyFitViolation[];
+}
+
+const PolicyFitVerdictSchema = z
+  .enum(['pass', 'drift', 'fail', 'unknown'])
+  .catch('unknown' as PolicyFitVerdict);
+
+const PolicyFitViolationSchema = z
+  .object({
+    label: z.string().catch(''),
+    detail: z.string().nullable().catch(null),
+  })
+  .passthrough();
+
+const PolicyFitSchema = z
+  .object({
+    verdict: PolicyFitVerdictSchema,
+    policy: z.string().nullable().catch(null),
+    policyName: z.string().nullable().catch(null),
+    policyVersion: z.string().nullable().catch(null),
+    changedSince: z.string().nullable().catch(null),
+    evaluatedAt: z.string().nullable().catch(null),
+    headline: z.string().nullable().catch(null),
+    summary: z.string().nullable().catch(null),
+    topViolations: z.array(PolicyFitViolationSchema).catch([]),
+  })
+  .passthrough();
+
+/**
+ * Parse an optional `policyFit` block. Absent/null/malformed all return
+ * `null` — treat identically to "not yet evaluated". A successfully parsed
+ * block with `verdict: "unknown"` is still returned (not collapsed to null)
+ * so a caller could in principle tell "no block" from "server said unknown",
+ * but every UI gate in this app treats the two the same (no policy claim
+ * rendered).
+ */
+export function parsePolicyFit(raw: unknown): PolicyFit | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = PolicyFitSchema.safeParse(raw);
+  if (!parsed.success) {
+    logShapeDrift('policyFit', parsed.error.issues);
+    return null;
+  }
+  const p = parsed.data;
+  return {
+    verdict: p.verdict,
+    policy: p.policy,
+    policyName: p.policyName,
+    policyVersion: p.policyVersion,
+    changedSince: p.changedSince,
+    evaluatedAt: p.evaluatedAt,
+    headline: p.headline,
+    summary: p.summary,
+    topViolations: p.topViolations.map((v) => ({ label: v.label, detail: v.detail })),
+  };
+}
+
 /**
  * Validate + shape a raw engine scan result into the app's `ScanResult`.
  * Replaces `normalizeResult()`. Never throws — a malformed sub-section

@@ -2,10 +2,27 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '../theme';
-import { gradeColor } from '../theme';
+import { gradeColor, policyVerdictColor } from '../theme';
 import { GradeBadge } from './GradeBadge';
 import type { WatchTarget } from '../types';
 import type { ServerTargetStatus } from '../api/client';
+
+// Fallback copy for the rare case a policyFit block parses with a non-unknown
+// verdict but no server headline — the backend contract says headline is
+// server-authored and always meaningful, but this keeps the row from ever
+// rendering blank text.
+function policyVerdictLabel(verdict: string): string {
+  switch (verdict) {
+    case 'pass':
+      return 'Policy check passed';
+    case 'drift':
+      return 'Policy drift detected';
+    case 'fail':
+      return 'Policy check failed';
+    default:
+      return 'Policy status unknown';
+  }
+}
 
 interface Props {
   watch: WatchTarget;
@@ -27,6 +44,11 @@ function relativeTime(iso: string | null): string {
 export function WatchRow({ watch, serverStatus, onPress }: Props) {
   const needsAttention = serverStatus?.state === 'needs_attention';
   const serverChange = serverStatus?.changeTitle ?? null;
+  // Server-authored policy verdict (monitoring-policy-fit-v1). Missing block or
+  // verdict "unknown" both mean "not yet evaluated" — render nothing extra,
+  // exactly today's row. Client never recomputes verdict/headline locally.
+  const policyFit = serverStatus?.policyFit ?? null;
+  const showPolicyFit = policyFit !== null && policyFit.verdict !== 'unknown';
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.left}>
@@ -58,6 +80,19 @@ export function WatchRow({ watch, serverStatus, onPress }: Props) {
             Checked {relativeTime(watch.lastCheckedAt)}
             {watch.lastScore != null ? ` · Score ${watch.lastScore}` : ''}
           </Text>
+        )}
+        {showPolicyFit && policyFit && (
+          <View style={styles.policyRow}>
+            <View
+              style={[styles.policyDot, { backgroundColor: policyVerdictColor(policyFit.verdict) }]}
+            />
+            <Text
+              style={[styles.policyText, { color: policyVerdictColor(policyFit.verdict) }]}
+              numberOfLines={1}
+            >
+              {policyFit.headline ?? policyVerdictLabel(policyFit.verdict)}
+            </Text>
+          </View>
         )}
       </View>
 
@@ -105,6 +140,22 @@ const styles = StyleSheet.create({
   metaAlert: {
     color: colors.warning,
     fontWeight: '600',
+  },
+  policyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  policyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: radius.full,
+  },
+  policyText: {
+    fontSize: typography.xs,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   pendingBadge: {
     width: 38,

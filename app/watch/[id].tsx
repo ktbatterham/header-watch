@@ -12,7 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '../../src/theme';
-import { gradeColor } from '../../src/theme';
+import { gradeColor, policyVerdictColor, policyVerdictBg } from '../../src/theme';
 import { loadWatches } from '../../src/storage/watches';
 import { getSnapshotsForWatch, getSnapshotById } from '../../src/storage/snapshots';
 import { getEventsForWatch } from '../../src/storage/events';
@@ -132,6 +132,13 @@ export default function WatchDetailScreen() {
   };
 
   const serverEvents = watch ? serverStatus.get(watch.id)?.events ?? [] : [];
+  // Server-authored policy verdict (backend `monitoring-policy-fit-v1`,
+  // request #9). Missing block or verdict "unknown" both mean "not yet
+  // evaluated" — render nothing extra and leave the rest of the screen exactly
+  // as it is today. The client never recomputes verdict/headline/violations
+  // locally; everything below is display of server-sent fields only.
+  const policyFit = watch ? serverStatus.get(watch.id)?.policyFit ?? null : null;
+  const showPolicyFit = policyFit !== null && policyFit.verdict !== 'unknown';
 
   if (!watch) {
     return (
@@ -248,6 +255,68 @@ export default function WatchDetailScreen() {
               baseline={baseline.headers}
               current={baseline.headers}
             />
+          </SectionCard>
+        </View>
+      )}
+
+      {/* Server-authored policy verdict — monitoring-policy-fit-v1. Renders the
+          backend's headline/verdict/summary/topViolations exactly as sent; no
+          local policy evaluation. Only shown when the capability is live and
+          this target has a policyFit block with a resolved (non-"unknown")
+          verdict — otherwise the screen looks exactly as it does today. */}
+      {showPolicyFit && policyFit && (
+        <View>
+          <Text style={styles.sectionLabel}>Policy fit</Text>
+          <SectionCard>
+            <View style={styles.policyHeader}>
+              <View
+                style={[styles.policyBadge, { backgroundColor: policyVerdictBg(policyFit.verdict) }]}
+              >
+                <Ionicons
+                  name={
+                    policyFit.verdict === 'pass'
+                      ? 'checkmark-circle-outline'
+                      : policyFit.verdict === 'drift'
+                      ? 'alert-circle-outline'
+                      : 'close-circle-outline'
+                  }
+                  size={14}
+                  color={policyVerdictColor(policyFit.verdict)}
+                />
+                <Text style={[styles.policyBadgeText, { color: policyVerdictColor(policyFit.verdict) }]}>
+                  {policyFit.verdict.toUpperCase()}
+                </Text>
+              </View>
+              {policyFit.policyName && (
+                <Text style={styles.policyName} numberOfLines={1}>
+                  {policyFit.policyName}
+                  {policyFit.policyVersion ? ` v${policyFit.policyVersion}` : ''}
+                </Text>
+              )}
+            </View>
+
+            {policyFit.headline && <Text style={styles.policyHeadline}>{policyFit.headline}</Text>}
+            {policyFit.summary && <Text style={styles.policySummary}>{policyFit.summary}</Text>}
+
+            {policyFit.topViolations.length > 0 && (
+              <View style={styles.violationsList}>
+                {policyFit.topViolations.map((v, i) => (
+                  <View key={i} style={styles.violationRow}>
+                    <Ionicons name="ellipse" size={4} color={colors.textMuted} style={styles.violationBullet} />
+                    <Text style={styles.violationText} numberOfLines={2}>
+                      {v.label}
+                      {v.detail ? `: ${v.detail}` : ''}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {policyFit.evaluatedAt && (
+              <Text style={styles.policyEvaluated}>
+                Evaluated {formatDate(policyFit.evaluatedAt)}
+              </Text>
+            )}
           </SectionCard>
         </View>
       )}
@@ -537,5 +606,62 @@ const styles = StyleSheet.create({
     color: colors.accentLight,
     fontSize: typography.sm,
     fontWeight: '600',
+  },
+  policyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  policyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  policyBadgeText: {
+    fontSize: typography.xs,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  policyName: {
+    color: colors.textMuted,
+    fontSize: typography.xs,
+    flexShrink: 1,
+  },
+  policyHeadline: {
+    color: colors.textPrimary,
+    fontSize: typography.sm,
+    fontWeight: '600',
+    marginTop: spacing.sm,
+  },
+  policySummary: {
+    color: colors.textSecondary,
+    fontSize: typography.sm,
+    marginTop: 4,
+  },
+  violationsList: {
+    marginTop: spacing.sm,
+    gap: 6,
+  },
+  violationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
+  violationBullet: {
+    marginTop: 6,
+  },
+  violationText: {
+    color: colors.textMuted,
+    fontSize: typography.xs,
+    flex: 1,
+  },
+  policyEvaluated: {
+    color: colors.textMuted,
+    fontSize: typography.xs,
+    marginTop: spacing.sm,
   },
 });

@@ -70,3 +70,35 @@ export function gradeColor(grade: string): string {
   if (grade === 'F') return colors.gradeF;
   return colors.gradeU;
 }
+
+// Server-authored `policyFit` verdict colors (monitoring-policy-fit-v1). Reuses
+// the same severity palette as everything else — pass/good, drift/warning,
+// fail/critical — so a policy verdict reads consistently with the app's other
+// status indicators. `unknown` is included for completeness but callers must
+// gate display on verdict !== 'unknown' per the backend contract (unevaluated
+// targets show no policy claim at all).
+export function policyVerdictColor(verdict: string): string {
+  switch (verdict) {
+    case 'pass':
+      return colors.good;
+    case 'drift':
+      return colors.warning;
+    case 'fail':
+      return colors.critical;
+    default:
+      return colors.textMuted;
+  }
+}
+
+export function policyVerdictBg(verdict: string): string {
+  switch (verdict) {
+    case 'pass':
+      return colors.goodBg;
+    case 'drift':
+      return colors.warningBg;
+    case 'fail':
+      return colors.criticalBg;
+    default:
+      return colors.surfaceElevated;
+  }
+}
