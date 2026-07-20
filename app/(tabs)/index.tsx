@@ -175,7 +175,11 @@ export default function WatchesScreen() {
           />
         }
       >
-        {watches.length === 0 ? (
+        {loading && watches.length === 0 ? (
+          <View style={styles.empty}>
+            <ActivityIndicator color={colors.accentLight} />
+          </View>
+        ) : !loading && watches.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="eye-off-outline" size={48} color={colors.textMuted} />
             <Text style={styles.emptyTitle}>No watches yet</Text>
