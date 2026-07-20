@@ -26,3 +26,14 @@ export async function openScanHandoff(target: string): Promise<void> {
     // Non-fatal.
   }
 }
+
+/**
+ * Link used when a user shares a watch's status with someone else (native share
+ * sheet, not the in-app web handoff above). Distinct utm_campaign so this is
+ * attributable separately from the scan-handoff CTA. Same privacy-safe UTM
+ * convention: aggregate + never carries the host, user, or device.
+ */
+export function shareWatchUrl(target: string): string {
+  return `${WEB_BASE}/?url=${encodeURIComponent(normalize(target))}` +
+    `&utm_source=${SOURCE}&utm_medium=app&utm_campaign=mobile_shared_watch`;
+}

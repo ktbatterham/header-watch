@@ -7,10 +7,12 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Sentry from '@sentry/react-native';
 import { colors, spacing, radius, typography } from '../../src/theme';
 import { gradeColor, policyVerdictColor, policyVerdictBg } from '../../src/theme';
 import { loadWatches } from '../../src/storage/watches';
@@ -19,7 +21,7 @@ import { getEventsForWatch } from '../../src/storage/events';
 import { useChecker } from '../../src/hooks/useChecker';
 import { useWatches } from '../../src/hooks/useWatches';
 import { haptics } from '../../src/haptics';
-import { openScanHandoff } from '../../src/lib/webHandoff';
+import { openScanHandoff, shareWatchUrl } from '../../src/lib/webHandoff';
 import { scheduleDriftNotification } from '../../src/notifications';
 import { updateWatch } from '../../src/storage/watches';
 import { SectionCard } from '../../src/components/SectionCard';
@@ -131,6 +133,25 @@ export default function WatchDetailScreen() {
     );
   };
 
+  const handleShare = async () => {
+    if (!watch) return;
+    haptics.light();
+    const gradeSummary = watch.lastGrade ? `Grade ${watch.lastGrade}` : 'not yet checked';
+    const verdictSummary =
+      showPolicyFit && policyFit ? `, policy ${policyFit.verdict}` : '';
+    const message =
+      `${watch.host} security headers: ${gradeSummary}${verdictSummary} — ` +
+      `I'm watching it with Header Watch. Full report: ${shareWatchUrl(watch.url)}`;
+    try {
+      const result = await Share.share({ message });
+      const outcome = result.action === Share.dismissedAction ? 'dismissed' : 'completed';
+      if (__DEV__) console.log(`[share] watch_share ${outcome}`);
+      Sentry.addBreadcrumb({ category: 'share', message: `watch_share ${outcome}`, level: 'info' });
+    } catch {
+      // Non-fatal — mirror openScanHandoff's best-effort posture.
+    }
+  };
+
   const serverEvents = watch ? serverStatus.get(watch.id)?.events ?? [] : [];
   // Server-authored policy verdict (backend `monitoring-policy-fit-v1`,
   // request #9). Missing block or verdict "unknown" both mean "not yet
@@ -206,15 +227,29 @@ export default function WatchDetailScreen() {
 
       {/* Mobile → web handoff: Header Watch covers headers; the web app runs a
           full posture scan of the same target (contract MOBILE-WEB-GROWTH). */}
-      <TouchableOpacity
-        style={styles.webHandoffBtn}
-        onPress={() => { haptics.light(); openScanHandoff(watch.url); }}
-        activeOpacity={0.8}
-        accessibilityLabel="Run a full SecURL scan on the web"
-      >
-        <Ionicons name="open-outline" size={16} color={colors.accentLight} />
-        <Text style={styles.webHandoffText}>Run full SecURL scan</Text>
-      </TouchableOpacity>
+      <View style={styles.secondaryActionsRow}>
+        <TouchableOpacity
+          style={[styles.webHandoffBtn, styles.secondaryActionBtn]}
+          onPress={() => { haptics.light(); openScanHandoff(watch.url); }}
+          activeOpacity={0.8}
+          accessibilityLabel="Run a full SecURL scan on the web"
+        >
+          <Ionicons name="open-outline" size={16} color={colors.accentLight} />
+          <Text style={styles.webHandoffText}>Run full SecURL scan</Text>
+        </TouchableOpacity>
+
+        {/* Share this watch's current status via the native share sheet — distinct
+            from the web handoff above, which is a self-directed scanner handoff. */}
+        <TouchableOpacity
+          style={[styles.webHandoffBtn, styles.secondaryActionBtn]}
+          onPress={handleShare}
+          activeOpacity={0.8}
+          accessibilityLabel={`Share ${watch.host}'s security header status`}
+        >
+          <Ionicons name="share-outline" size={16} color={colors.accentLight} />
+          <Text style={styles.webHandoffText}>Share status</Text>
+        </TouchableOpacity>
+      </View>
 
       {snapshots.length >= 2 && (
         <SectionCard>
@@ -596,6 +631,13 @@ const styles = StyleSheet.create({
     color: colors.critical,
     fontSize: typography.base,
     fontWeight: '600',
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  secondaryActionBtn: {
+    flex: 1,
   },
   webHandoffBtn: {
     flexDirection: 'row',
