@@ -415,6 +415,8 @@ export default function WatchDetailScreen() {
                   setWatch(updated);
                 }}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: watch.checkIntervalHours === hrs }}
               >
                 <Text
                   style={[

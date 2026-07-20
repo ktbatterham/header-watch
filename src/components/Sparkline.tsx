@@ -22,8 +22,18 @@ export function Sparkline({ data, height = 56, maxBars = 30 }: SparklineProps) {
   const points = data.slice(-maxBars); // most recent maxBars
   if (points.length === 0) return null;
 
+  const first = points[0].score;
+  const last = points[points.length - 1].score;
+  const trendLabel = `Score trend: ${first} to ${last} over ${points.length} check${
+    points.length === 1 ? '' : 's'
+  }`;
+
   return (
-    <View style={[styles.row, { height }]}>
+    <View
+      style={[styles.row, { height }]}
+      accessible
+      accessibilityLabel={trendLabel}
+    >
       {points.map((p, i) => (
         <View
           key={i}
