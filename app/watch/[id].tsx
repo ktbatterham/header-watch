@@ -29,7 +29,9 @@ import { GradeBadge } from '../../src/components/GradeBadge';
 import { HeaderDiff } from '../../src/components/HeaderDiff';
 import { DriftEventRow } from '../../src/components/DriftEventRow';
 import { ServerEventCard } from '../../src/components/ServerEventCard';
+import { TimelineEventCard } from '../../src/components/TimelineEventCard';
 import { Sparkline } from '../../src/components/Sparkline';
+import { fetchMonitoringTimeline, type TimelineEvent } from '../../src/api/client';
 import type { WatchTarget, HeaderSnapshot, DriftEvent } from '../../src/types';
 
 export default function WatchDetailScreen() {
@@ -44,6 +46,7 @@ export default function WatchDetailScreen() {
   const [events, setEvents] = useState<DriftEvent[]>([]);
   const [snapshots, setSnapshots] = useState<HeaderSnapshot[]>([]);
   const [checking, setChecking] = useState(false);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -64,6 +67,11 @@ export default function WatchDetailScreen() {
     setEvents(evts.sort((a, b) =>
       new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime(),
     ));
+
+    // Full per-target history (monitoring-timeline-v1), best-effort. null/empty
+    // (capability absent, no server target, fetch failed, zero events) leaves
+    // `timeline` empty and the screen falls back to the single-event section.
+    setTimeline(w.serverTargetId ? (await fetchMonitoringTimeline(w.serverTargetId)) ?? [] : []);
 
     // Clear the alert when the user views the detail
     if (w.hasAlert) await clearAlert(id);
@@ -361,17 +369,17 @@ export default function WatchDetailScreen() {
         </View>
       )}
 
-      {/* Server-authored explanation for the most recent monitored check —
-          mobile-monitoring-explanations-v1. Renders backend title/message/
-          changedEvidence/severity/nextAction directly; no locally-composed
-          copy. Only present when the capability is live and this target has
-          registered server-side monitoring. */}
-      {serverEvents.length > 0 && (
+      {/* Full per-target history — monitoring-timeline-v1. Supersedes the
+          single-event "What changed" section below when present and non-empty
+          (same join key, so a push tap still highlights the right entry).
+          Renders backend explanation/title/body directly; no locally-composed
+          copy or severity computation. */}
+      {timeline.length > 0 ? (
         <View>
-          <Text style={styles.sectionLabel}>What changed (server-monitored)</Text>
+          <Text style={styles.sectionLabel}>Timeline</Text>
           <SectionCard style={{ padding: 0 }}>
-            {serverEvents.map((event) => (
-              <ServerEventCard
+            {timeline.map((event) => (
+              <TimelineEventCard
                 key={event.eventId}
                 event={event}
                 highlighted={event.eventId === eventId}
@@ -379,6 +387,27 @@ export default function WatchDetailScreen() {
             ))}
           </SectionCard>
         </View>
+      ) : (
+        /* Server-authored explanation for the most recent monitored check —
+           mobile-monitoring-explanations-v1. Renders backend title/message/
+           changedEvidence/severity/nextAction directly; no locally-composed
+           copy. Fallback when the timeline endpoint has no data for this
+           target (capability absent, no server target, fetch failed, or
+           genuinely zero events). */
+        serverEvents.length > 0 && (
+          <View>
+            <Text style={styles.sectionLabel}>What changed (server-monitored)</Text>
+            <SectionCard style={{ padding: 0 }}>
+              {serverEvents.map((event) => (
+                <ServerEventCard
+                  key={event.eventId}
+                  event={event}
+                  highlighted={event.eventId === eventId}
+                />
+              ))}
+            </SectionCard>
+          </View>
+        )
       )}
 
       {/* On-device check history — the local drift fallback. Always shown when

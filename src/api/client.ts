@@ -642,3 +642,117 @@ export async function fetchMonitoringAttention(): Promise<ParsedAttention | null
     return null;
   }
 }
+
+// ── Per-target monitoring timeline ────────────────────────────────────────────
+// GET /api/monitoring-targets/:id/timeline — server-authored history of drift/
+// policy/cert events for a single target (backend `monitoring-timeline-v1`
+// monitoring-feature). Unlike the single latest-event summary from
+// /api/monitoring-mobile-summary, this returns the full recent history so the
+// detail screen can render more than the most-recent change. Best-effort: any
+// failure (capability absent, network, non-2xx, malformed body) returns null so
+// the caller falls back to the existing single-event section. apiFetch attaches
+// the X-Scan-Owner token + client headers.
+export interface TimelineEvidenceItem {
+  kind: string;
+  name: string | null;
+  previous: unknown;
+  current: unknown;
+  confidence: string | null;
+}
+
+export interface TimelineEventExplanation {
+  headline: string | null;
+  detail: string | null;
+  action: string | null;
+}
+
+// `type` is additive per the contract (first_seen | changed | recovered |
+// still_unhealthy | policy_regressed | policy_recovered | cert_expiring |
+// cert_expired | cert_renewed | issuer_changed | unreachable |
+// push_delivery_changed, plus future values) — kept as `string | null` and
+// treated as opaque; renderers must not switch on it, only display title/body.
+export interface TimelineEvent {
+  eventId: string;
+  targetId: string | null;
+  occurredAt: string | null;
+  firstSeenAt: string | null;
+  changedAt: string | null;
+  recoveredAt: string | null;
+  type: string | null;
+  sourceType: string | null;
+  severity: string | null;
+  mattersToPolicy: boolean | null;
+  title: string | null;
+  body: string | null;
+  explanation: TimelineEventExplanation | null;
+  evidence: TimelineEvidenceItem[];
+}
+
+function coerceTimelineExplanation(raw: unknown): TimelineEventExplanation | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  return {
+    headline: typeof e.headline === 'string' ? e.headline : null,
+    detail: typeof e.detail === 'string' ? e.detail : null,
+    action: typeof e.action === 'string' ? e.action : null,
+  };
+}
+
+function coerceTimelineEvidence(raw: unknown): TimelineEvidenceItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TimelineEvidenceItem[] = [];
+  for (const item of raw) {
+    if (item && typeof item === 'object') {
+      const e = item as Record<string, unknown>;
+      if (typeof e.kind === 'string') {
+        out.push({
+          kind: e.kind,
+          name: typeof e.name === 'string' ? e.name : null,
+          previous: e.previous ?? null,
+          current: e.current ?? null,
+          confidence: typeof e.confidence === 'string' ? e.confidence : null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// eventId is the identity contract — stable across reads and the join key for
+// push/highlight routing (same rule as coerceServerEvent above). Without it,
+// treat the entry as unusable rather than rendering a card nothing can match.
+function coerceTimelineEvent(raw: unknown): TimelineEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  if (typeof e.eventId !== 'string') return null;
+  return {
+    eventId: e.eventId,
+    targetId: typeof e.targetId === 'string' ? e.targetId : null,
+    occurredAt: typeof e.occurredAt === 'string' ? e.occurredAt : null,
+    firstSeenAt: typeof e.firstSeenAt === 'string' ? e.firstSeenAt : null,
+    changedAt: typeof e.changedAt === 'string' ? e.changedAt : null,
+    recoveredAt: typeof e.recoveredAt === 'string' ? e.recoveredAt : null,
+    type: typeof e.type === 'string' ? e.type : null,
+    sourceType: typeof e.sourceType === 'string' ? e.sourceType : null,
+    severity: typeof e.severity === 'string' ? e.severity : null,
+    mattersToPolicy: typeof e.mattersToPolicy === 'boolean' ? e.mattersToPolicy : null,
+    title: typeof e.title === 'string' ? e.title : null,
+    body: typeof e.body === 'string' ? e.body : null,
+    explanation: coerceTimelineExplanation(e.explanation),
+    evidence: coerceTimelineEvidence(e.evidence),
+  };
+}
+
+export async function fetchMonitoringTimeline(targetId: string): Promise<TimelineEvent[] | null> {
+  try {
+    const features = await getMonitoringFeatures();
+    if (!features?.includes('monitoring-timeline-v1')) return null;
+    const res = await apiFetch(`/api/monitoring-targets/${encodeURIComponent(targetId)}/timeline`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { timeline?: unknown };
+    if (!Array.isArray(data.timeline)) return null;
+    return data.timeline.map(coerceTimelineEvent).filter((e): e is TimelineEvent => e !== null);
+  } catch {
+    return null;
+  }
+}
