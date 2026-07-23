@@ -11,7 +11,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '../src/theme';
 import { scanUrl } from '../src/api/client';
@@ -34,8 +34,14 @@ export default function AddScreen() {
   const router = useRouter();
   const { add } = useWatches();
 
+  // Deep-link pre-fill, e.g. `headerwatch://add?url=https://example.com` from the QR a
+  // CLI scan prints. Pre-fill only: the value is untrusted inbound input, so starting
+  // the watch stays an explicit user tap rather than something a link can do silently.
+  const { url: urlParam } = useLocalSearchParams<{ url?: string }>();
   const [step, setStep] = useState<Step>('input');
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(
+    typeof urlParam === 'string' ? urlParam.trim().slice(0, 2048) : '',
+  );
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
