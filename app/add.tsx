@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -42,6 +42,14 @@ export default function AddScreen() {
   const [url, setUrl] = useState(
     typeof urlParam === 'string' ? urlParam.trim().slice(0, 2048) : '',
   );
+  // A deep link often arrives while this screen is already mounted (the app was
+  // backgrounded, not cold-started), and useState's initial value only applies on
+  // first mount — so re-apply whenever the param changes or the pre-fill is missed.
+  useEffect(() => {
+    if (typeof urlParam === 'string' && urlParam.trim()) {
+      setUrl(urlParam.trim().slice(0, 2048));
+    }
+  }, [urlParam]);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [pendingSnapshotId, setPendingSnapshotId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
