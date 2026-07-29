@@ -17,7 +17,7 @@
           "scanner",
           "alert"
         ],
-        "releaseNotes": "• New: a per-target timeline on watch detail, showing what changed and when, with plain-English explanations\n• New: share a watch straight from the detail screen\n• New: policy fit verdicts show whether a site still meets the policy you selected\n• Fixed a brief flash of the empty state while your watches were still loading\n• Accessibility improvements and reliability fixes",
+        "releaseNotes": "• Fixed: opening a link or QR code from the SecURL command line tool now reliably pre-fills the target when the app is already running\n• Minor reliability improvements",
         "privacyPolicyUrl": "https://securl.online/privacy",
         "supportUrl": "https://securl.online/support"
       }
