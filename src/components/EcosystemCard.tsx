@@ -43,6 +43,13 @@ const APPS: SuiteApp[] = [
 
 const ANDROID_URL = 'https://securl.online/downloads';
 
+// Free web tools in the suite. The CSP Builder is the natural companion to header
+// monitoring: this app tells you a policy changed, the Builder helps you write the
+// replacement. Attributed so the app -> web direction is measurable alongside the
+// backend's csp_builder:header_watch traffic going the other way.
+const CSP_BUILDER_URL =
+  'https://securl.online/tools/csp-builder?utm_source=header_watch&utm_medium=app&utm_campaign=suite_cross_link';
+
 function AppRow({ app }: { app: SuiteApp }) {
   const url = Platform.OS === 'android' ? ANDROID_URL : app.iosUrl;
   return (
@@ -73,6 +80,23 @@ export function EcosystemCard() {
           <AppRow app={app} />
         </React.Fragment>
       ))}
+      <View style={styles.divider} />
+      <TouchableOpacity
+        style={styles.row}
+        onPress={() => Linking.openURL(CSP_BUILDER_URL)}
+        activeOpacity={0.7}
+        accessibilityRole="link"
+        accessibilityLabel="CSP Builder — build a Content-Security-Policy in your browser, free"
+      >
+        <View style={styles.toolIcon}>
+          <Ionicons name="construct-outline" size={20} color={colors.accentLight} />
+        </View>
+        <View style={styles.rowText}>
+          <Text style={styles.appName}>CSP Builder</Text>
+          <Text style={styles.tagline}>Write a Content-Security-Policy in your browser, free</Text>
+        </View>
+        <Ionicons name="open-outline" size={16} color={colors.textMuted} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -103,6 +127,14 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: radius.md,
+  },
+  toolIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
   },
   rowText: {
     flex: 1,
