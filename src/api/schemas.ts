@@ -191,14 +191,14 @@ export interface ParsedAttention {
   attention: ParsedAttentionRow[];
 }
 
-const AttentionSummaryDefaults: ParsedAttentionSummary = {
+const AttentionSummaryDefaults = {
   state: 'unknown',
   highestSeverity: null,
   targetsTotal: 0,
   targetsNeedingAttention: 0,
   targetsUnhealthy: 0,
   monitoringEnabled: false,
-};
+} satisfies ParsedAttentionSummary;
 
 const RawAttentionSummarySchema = z
   .object({
